@@ -127,15 +127,21 @@ def move_scanline(
 def page_change(
     file_obj,
     page: int
-) -> Tuple[Optional[Image.Image], str, Optional[np.ndarray], Tuple[int, int], str, int]:
-    """При смене страницы: возвращаем img, info, img_array, saved_margins, auto_info и total"""
+) -> Tuple[Optional[Image.Image], Optional[np.ndarray], int]:
     if not file_obj:
-        return None, "", None, (0, 0), "", 0
+        return None, None, 0
     try:
         img_pil, total = pdf_to_image(file_obj.name, page)
-    except Exception as e:
-        return None, f"Error: {e}", None, (0, 0), "", 0
+    except Exception:
+        return None, None, 0
     img_arr = np.array(img_pil)
+    return img_pil, img_arr, total
+
+def file_upload(
+    file_obj,
+    page: int
+) -> Tuple[Optional[Image.Image], str, Optional[np.ndarray], Tuple[int, int], str, int]:
+    img_pil, img_arr, total = page_change(file_obj, page)
     end_page = min(page + Config.AUTOCALC_PAGES, total)
     candidates = compute_margins(file_obj.name, page, end_page)
     auto = max(set(candidates), key=candidates.count)
@@ -199,24 +205,25 @@ def gradio_interface() -> None:
                     btn_prev = gr.Button("Prev")
                     btn_next = gr.Button("Next")
                     btn_last = gr.Button("Last")
-                btn_reset = gr.Button("Reset margins")
                 btn_save = gr.Button("Save margins")
+                btn_reset = gr.Button("Reset margins")
                 step = gr.Number(value=Config.DEFAULT_STEP, label="Step", precision=0)
                 btn_up = gr.Button("Up")
                 btn_down = gr.Button("Down")
             with gr.Column():
                 output_image = gr.Image(type="pil", label="Preview")
-                scanline_img = gr.Image(type="pil", label="Scanline")
+        with gr.Row():
+            scanline_img = gr.Image(type="pil", label="Scanline")
 
         file_input.change(
-            fn=page_change,
+            fn=file_upload,
             inputs=[file_input, page_num],
             outputs=[output_image, page_info, state_img, state_saved, auto_info, state_total]
         )
         page_num.change(
             fn=page_change,
             inputs=[file_input, page_num],
-            outputs=[output_image, page_info, state_img, state_saved, auto_info, state_total]
+            outputs=[output_image, state_img, state_total]
         )
         btn_first.click(lambda: 1, [], [page_num])
         btn_prev.click(lambda p: max(p-1,1), [page_num], [page_num])
