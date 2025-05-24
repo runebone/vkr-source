@@ -30,18 +30,18 @@ with gr.Blocks(title="PDF Segmenter") as demo:
     scanline_y = gr.State(0)  # текущая строка y
 
     with gr.Row():
-        file_input = gr.File(label="PDF-документ", file_types=['.pdf'])
-        output_image = gr.Image(type="pil", label="Результат разметки")
+        # scanline_output = gr.Image(type="pil", label="Сканирующая строка (2 пикселя)", height=20)
+        scanline_output = gr.Image(type="pil")
     with gr.Row():
-        page_info = gr.Textbox(label="Информация о документе")
-    with gr.Row():
-        page_number = gr.Number(value=1, label="Номер страницы", precision=0)
-    with gr.Row():
-        scanline_output = gr.Image(type="pil", label="Сканирующая строка (2 пикселя)")
-
-    with gr.Row():
-        btn_up = gr.Button("Вверх", elem_id="btn-up")
-        btn_down = gr.Button("Вниз", elem_id="btn-down")
+        with gr.Column():
+            file_input = gr.File(label="PDF-документ", file_types=['.pdf'])
+            page_info = gr.Textbox(label="Информация о документе")
+            page_number = gr.Number(value=1, label="Номер страницы", precision=0)
+            step = gr.Number(2, label="Шаг")
+            btn_up = gr.Button("Вверх", elem_id="btn-up")
+            btn_down = gr.Button("Вниз", elem_id="btn-down")
+        with gr.Column():
+            output_image = gr.Image(type="pil", label="Результат разметки")
 
     def update(file, page):
         try:
@@ -102,6 +102,12 @@ with gr.Blocks(title="PDF Segmenter") as demo:
 
         return Image.fromarray(scanline), Image.fromarray(highlighted_img), y_new
 
+    def move_up_wrapper(img_np, scanline_y, step):
+        return move_scanline(img_np, scanline_y, -step)
+
+    def move_down_wrapper(img_np, scanline_y, step):
+        return move_scanline(img_np, scanline_y, step)
+
     file_input.change(fn=update, inputs=[file_input, page_number], outputs=[output_image, page_info, state_img_np])
     page_number.change(fn=update, inputs=[file_input, page_number], outputs=[output_image, page_info, state_img_np])
     output_image.select(
@@ -110,9 +116,9 @@ with gr.Blocks(title="PDF Segmenter") as demo:
         outputs=[scanline_output, output_image, scanline_y]
     )
 
-    btn_up.click(fn=move_scanline, inputs=[state_img_np, scanline_y, gr.Number(-1, label="Шаг вверх")],
+    btn_up.click(fn=move_up_wrapper, inputs=[state_img_np, scanline_y, step],
                  outputs=[scanline_output, output_image, scanline_y])
-    btn_down.click(fn=move_scanline, inputs=[state_img_np, scanline_y, gr.Number(1, label="Шаг вниз")],
+    btn_down.click(fn=move_down_wrapper, inputs=[state_img_np, scanline_y, step],
                    outputs=[scanline_output, output_image, scanline_y])
 
 demo.launch()
