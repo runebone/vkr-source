@@ -285,23 +285,28 @@ def gradio_interface() -> None:
         default_margins = gr.State(value=(0, 0))
         state_total = gr.State(value=0)
 
-        output_image = gr.Image(type="pil", label="Результат разметки")
-        scanline_output = gr.Image(type="pil")
-        page_info = gr.Textbox(label="Информация о документе")
-        margins_info = gr.Textbox(label="Сохраненные поля")
-        auto_margins_info = gr.Textbox(label="Автоматически выбранные поля")
-
-        file_input = gr.File(label="PDF-документ", file_types=[".pdf"])
-        page_number = gr.Number(value=1, label="Номер страницы", precision=0)
         with gr.Row():
             with gr.Column():
-                btn_prev = gr.Button("Предыдущая")
+                page_info = gr.Textbox(label="Информация о документе")
+                margins_info = gr.Textbox(label="Сохраненные поля")
+                auto_margins_info = gr.Textbox(label="Автоматически выбранные поля")
+
+                file_input = gr.File(label="PDF-документ", file_types=[".pdf"])
+                page_number = gr.Number(value=1, label="Номер страницы", precision=0)
+                with gr.Row():
+                    with gr.Column():
+                        btn_prev = gr.Button("Предыдущая")
+                    with gr.Column():
+                        btn_next = gr.Button("Следующая")
+                save_margin_btn= gr.Button("Сохранить поля страницы")
+                step_input = gr.Number(value=DEFAULT_STEP, label="Шаг", precision=0)
+                btn_up = gr.Button("Вверх")
+                btn_down = gr.Button("Вниз")
             with gr.Column():
-                btn_next = gr.Button("Следующая")
-        save_margin_btn= gr.Button("Сохранить поля страницы")
-        step_input = gr.Number(value=DEFAULT_STEP, label="Шаг", precision=0)
-        btn_up = gr.Button("Вверх")
-        btn_down = gr.Button("Вниз")
+                output_image = gr.Image(type="pil", label="Результат разметки")
+        with gr.Row():
+            scanline_output = gr.Image(type="pil")
+
 
         def update_ui(file, page):
             try:
