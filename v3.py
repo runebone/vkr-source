@@ -155,15 +155,16 @@ def reset_margins(
     file_obj,
     page: int,
     total: int
-) -> Tuple[Tuple[int, int], str]:
+) -> Tuple[Tuple[int, int], str, str]:
     """Сбрасываем saved_margins по auto расчету от page до page+Config.AUTOCALC_PAGES"""
     if not file_obj:
-        return (0, 0), ""
+        return (0, 0), "", ""
     end_page = min(page + Config.AUTOCALC_PAGES, total)
     candidates = compute_margins(file_obj.name, page, end_page)
     auto = max(set(candidates), key=candidates.count)
     text = f"Reset margins: left={auto[0]}, right={auto[1]}"
-    return auto, text
+    auto_info = f"Auto margins (pages {page}-{end_page}): left={auto[0]}, right={auto[1]}"
+    return auto, text, auto_info
 
 
 def save_page_margins(
@@ -232,7 +233,7 @@ def gradio_interface() -> None:
         btn_reset.click(
             fn=reset_margins,
             inputs=[file_input, page_num, state_total],
-            outputs=[state_saved, saved_info]
+            outputs=[state_saved, saved_info, auto_info]
         )
         btn_save.click(
             fn=save_page_margins,
