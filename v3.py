@@ -68,10 +68,9 @@ def compute_margins(
         if not cols_any.any():
             left = right = pix.w
         else:
-            first = np.argmax(cols_any)
-            last = pix.w - 1 - np.argmax(cols_any[::-1])
-            left = int(first)
-            right = int(pix.w - 1 - last)
+            first = int(np.argmax(cols_any))
+            last = int(pix.w - 1 - np.argmax(cols_any[::-1]))
+            left, right = first, pix.w - 1 - last
         margins.append((left, right))
     return margins
 
@@ -106,8 +105,7 @@ def overlay_scanline(
             Config.OVERLAY_ALPHA * COLOR_CONTENT
             + (1 - Config.OVERLAY_ALPHA) * region[mask_content]
         )
-    overlayed = np.clip(overlayed, 0, 255).astype(np.uint8)
-    return scan_slice, overlayed
+    return np.clip(overlayed, 0, 255).astype(np.uint8), scan_slice
 
 
 def extract_scanline(
@@ -121,10 +119,10 @@ def extract_scanline(
     _, y = evt.index
     y = int(y)
     try:
-        scan_np, highlighted_np = overlay_scanline(img, y, margins)
+        highlighted_arr, scan_arr = overlay_scanline(img, y, margins)
     except IndexError:
         return None, None, None
-    return Image.fromarray(scan_np), Image.fromarray(highlighted_np), y
+    return Image.fromarray(scan_arr), Image.fromarray(highlighted_arr), y
 
 
 def move_scanline(
@@ -138,8 +136,8 @@ def move_scanline(
     """
     new_y = current_y + step
     try:
-        scan_np, highlighted_np = overlay_scanline(img, new_y, margins)
-        return Image.fromarray(scan_np), Image.fromarray(highlighted_np), new_y
+        highlighted_arr, scan_arr = overlay_scanline(img, new_y, margins)
+        return Image.fromarray(scan_arr), Image.fromarray(highlighted_arr), new_y
     except IndexError:
         return None, None, current_y
 
@@ -152,6 +150,16 @@ def prev_page(page: int) -> int:
 def next_page(page: int, total: int) -> int:
     """Переход к следующей странице."""
     return min(page + 1, total)
+
+
+def first_page() -> int:
+    """Переход к первой странице."""
+    return 1
+
+
+def last_page(total: int) -> int:
+    """Переход к последней странице."""
+    return total
 
 
 def save_page_margins(
@@ -245,8 +253,10 @@ def gradio_interface() -> None:
                 file_input = gr.File(label="PDF file", file_types=[".pdf"])
                 page_num = gr.Number(value=1, label="Page number", precision=0)
                 with gr.Row():
+                    btn_first = gr.Button("First")
                     btn_prev = gr.Button("Prev")
                     btn_next = gr.Button("Next")
+                    btn_last = gr.Button("Last")
                 btn_save = gr.Button("Save margins")
                 step = gr.Number(value=Config.DEFAULT_STEP, label="Step", precision=0)
                 btn_up = gr.Button("Up")
@@ -291,8 +301,22 @@ def gradio_interface() -> None:
             inputs=[file_input, page_num, state_saved],
             outputs=[state_saved, saved_info],
         )
-        btn_prev.click(lambda p: prev_page(int(p)), inputs=[page_num], outputs=[page_num])
-        btn_next.click(lambda p, t: next_page(int(p), int(t)), inputs=[page_num, state_total], outputs=[page_num])
+        btn_prev.click(
+            fn=lambda p: prev_page(int(p)),
+            inputs=[page_num], outputs=[page_num]
+        )
+        btn_next.click(
+            fn=lambda p, t: next_page(int(p), int(t)),
+            inputs=[page_num, state_total], outputs=[page_num]
+        )
+        btn_first.click(
+            fn=first_page,
+            inputs=[], outputs=[page_num]
+        )
+        btn_last.click(
+            fn=last_page,
+            inputs=[state_total], outputs=[page_num]
+        )
 
         demo.launch()
 
