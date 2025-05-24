@@ -18,8 +18,8 @@ COLOR_MARGIN = np.array([255, 0, 0], dtype=np.float32)   # красный
 @dataclass(frozen=True)
 class Config:
     SCALE_FACTOR: int = 3
-    SCANLINE_HEIGHT: int = 2
-    DEFAULT_STEP: int = 2
+    SCANLINE_HEIGHT: int = 1
+    DEFAULT_STEP: int = 1
     OVERLAY_ALPHA: float = 0.5
     AUTOCALC_PAGES: int = 10
     WHITE_THRESHOLD: int = 250
@@ -99,14 +99,14 @@ def extract_scanline(
     img: np.ndarray,
     evt: gr.SelectData,
     saved_margins: Tuple[int, int]
-) -> Tuple[Optional[Image.Image], Optional[Image.Image], Optional[int]]:
+) -> Tuple[Optional[Image.Image], Optional[Image.Image], Optional[int], Optional[str]]:
     """Обработчик клика: возвращаем scan_slice, overlayed и y"""
     _, y = evt.index
     try:
         slice_np, ov_np = overlay_scanline(img, int(y), saved_margins)
     except IndexError:
-        return None, None, None
-    return Image.fromarray(slice_np), Image.fromarray(ov_np), int(y)
+        return None, None, None, None
+    return Image.fromarray(slice_np), Image.fromarray(ov_np), int(y), str(y)
 
 
 def move_scanline(
@@ -114,14 +114,14 @@ def move_scanline(
     y: int,
     step: int,
     saved_margins: Tuple[int, int]
-) -> Tuple[Optional[Image.Image], Optional[Image.Image], int]:
+) -> Tuple[Optional[Image.Image], Optional[Image.Image], int, str]:
     """Сдвигаем сканлайн по step и возвращаем slice, overlay и новое y"""
     new_y = y + step
     try:
         slice_np, ov_np = overlay_scanline(img, new_y, saved_margins)
-        return Image.fromarray(slice_np), Image.fromarray(ov_np), new_y
+        return Image.fromarray(slice_np), Image.fromarray(ov_np), new_y, str(new_y)
     except IndexError:
-        return None, None, y
+        return None, None, y, str(y)
 
 
 def page_change(
@@ -201,6 +201,7 @@ def gradio_interface() -> None:
                 page_info = gr.Textbox(label="Document info")
                 saved_info = gr.Textbox(label="Saved margins")
                 auto_info = gr.Textbox(label="Auto margins")
+                y_info = gr.Textbox(label="Scanline Y")
                 with gr.Row():
                     btn_first = gr.Button("First")
                     btn_prev = gr.Button("Prev")
@@ -243,17 +244,17 @@ def gradio_interface() -> None:
         output_image.select(
             fn=extract_scanline,
             inputs=[state_img, state_saved],
-            outputs=[scanline_img, output_image, state_y]
+            outputs=[scanline_img, output_image, state_y, y_info]
         )
         btn_up.click(
             fn=lambda img, y, s, m: move_scanline(img, y, -int(s), m),
             inputs=[state_img, state_y, step, state_saved],
-            outputs=[scanline_img, output_image, state_y]
+            outputs=[scanline_img, output_image, state_y, y_info]
         )
         btn_down.click(
             fn=lambda img, y, s, m: move_scanline(img, y, int(s), m),
             inputs=[state_img, state_y, step, state_saved],
-            outputs=[scanline_img, output_image, state_y]
+            outputs=[scanline_img, output_image, state_y, y_info]
         )
 
         demo.launch()
