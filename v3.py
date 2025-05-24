@@ -27,16 +27,13 @@ class Config:
 
 
 def pdf_to_image(pdf_path: str, page_number: int) -> Tuple[Image.Image, int]:
-    """
-    Преобразует страницу PDF в PIL.Image и возвращает её и общее число страниц.
-    """
+    """Преобразуем страницу PDF в PIL.Image и возвращаем её вместе с числом страниц"""
     doc = fitz.open(pdf_path)
     total = doc.page_count
-    if page_number < 1 or page_number > total:
+    if not 1 <= page_number <= total:
         raise ValueError(f"Page number must be between 1 and {total}")
     page = doc.load_page(page_number - 1)
-    matrix = fitz.Matrix(Config.SCALE_FACTOR, Config.SCALE_FACTOR)
-    pix = page.get_displaylist().get_pixmap(matrix=matrix)
+    pix = page.get_displaylist().get_pixmap(matrix=fitz.Matrix(Config.SCALE_FACTOR, Config.SCALE_FACTOR))
     img = Image.frombytes("RGB", (pix.w, pix.h), pix.samples)
     return img, total
 
@@ -81,92 +78,93 @@ def overlay_scanline(
     margins: Tuple[int, int],
     height: int = Config.SCANLINE_HEIGHT,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Создает срез сканлайна и изображение с перекраской:
-    - внутренняя область зеленая,
-    - поля красные.
-    """
+    """Возвращаем scan_slice и overlayed изображение с подсветкой"""
     h, w, _ = img.shape
-    left, right = margins
     if y < 0 or y + height > h:
-        raise IndexError("Scanline out of image bounds")
-    scan_slice = img[y : y + height].copy()
-    overlayed = img.astype(np.float32).copy()
+        raise IndexError("Scanline out of bounds")
+    left, right = margins
     xs = np.arange(w)
     mask_margin = (xs < left) | (xs >= w - right)
     mask_content = ~mask_margin
+    overlay = img.astype(np.float32).copy()
     for row in range(y, y + height):
-        region = overlayed[row]
-        region[mask_margin] = (
-            Config.OVERLAY_ALPHA * COLOR_MARGIN
-            + (1 - Config.OVERLAY_ALPHA) * region[mask_margin]
-        )
-        region[mask_content] = (
-            Config.OVERLAY_ALPHA * COLOR_CONTENT
-            + (1 - Config.OVERLAY_ALPHA) * region[mask_content]
-        )
-    return np.clip(overlayed, 0, 255).astype(np.uint8), scan_slice
+        overlay[row, mask_margin] = Config.OVERLAY_ALPHA * COLOR_MARGIN + (1 - Config.OVERLAY_ALPHA) * overlay[row, mask_margin]
+        overlay[row, mask_content] = Config.OVERLAY_ALPHA * COLOR_CONTENT + (1 - Config.OVERLAY_ALPHA) * overlay[row, mask_content]
+    overlay = np.clip(overlay, 0, 255).astype(np.uint8)
+    slice_img = img[y : y + height]
+    return slice_img, overlay
 
 
 def extract_scanline(
     img: np.ndarray,
     evt: gr.SelectData,
-    margins: Tuple[int, int]
+    saved_margins: Tuple[int, int]
 ) -> Tuple[Optional[Image.Image], Optional[Image.Image], Optional[int]]:
-    """
-    Обработчик клика: извлекает scanline и подсвечивает.
-    """
+    """Обработчик клика: возвращаем scan_slice, overlayed и y"""
     _, y = evt.index
-    y = int(y)
     try:
-        highlighted_arr, scan_arr = overlay_scanline(img, y, margins)
+        slice_np, ov_np = overlay_scanline(img, int(y), saved_margins)
     except IndexError:
         return None, None, None
-    return Image.fromarray(scan_arr), Image.fromarray(highlighted_arr), y
+    return Image.fromarray(slice_np), Image.fromarray(ov_np), int(y)
 
 
 def move_scanline(
     img: np.ndarray,
-    current_y: int,
+    y: int,
     step: int,
-    margins: Tuple[int, int]
+    saved_margins: Tuple[int, int]
 ) -> Tuple[Optional[Image.Image], Optional[Image.Image], int]:
-    """
-    Сдвигает scanline и подсвечивает.
-    """
-    new_y = current_y + step
+    """Сдвигаем сканлайн по step и возвращаем slice, overlay и новое y"""
+    new_y = y + step
     try:
-        highlighted_arr, scan_arr = overlay_scanline(img, new_y, margins)
-        return Image.fromarray(scan_arr), Image.fromarray(highlighted_arr), new_y
+        slice_np, ov_np = overlay_scanline(img, new_y, saved_margins)
+        return Image.fromarray(slice_np), Image.fromarray(ov_np), new_y
     except IndexError:
-        return None, None, current_y
+        return None, None, y
 
 
-def prev_page(page: int) -> int:
-    """Переход к предыдущей странице."""
-    return max(page - 1, 1)
+def page_change(
+    file_obj,
+    page: int
+) -> Tuple[Optional[Image.Image], str, Optional[np.ndarray], Tuple[int, int], str, int]:
+    """При смене страницы: возвращаем img, info, img_array, saved_margins, auto_info и total"""
+    if not file_obj:
+        return None, "", None, (0, 0), "", 0
+    try:
+        img_pil, total = pdf_to_image(file_obj.name, page)
+    except Exception as e:
+        return None, f"Error: {e}", None, (0, 0), "", 0
+    img_arr = np.array(img_pil)
+    end_page = min(page + Config.AUTOCALC_PAGES, total)
+    candidates = compute_margins(file_obj.name, page, end_page)
+    auto = max(set(candidates), key=candidates.count)
+    saved = auto
+    info = f"Total pages: {total}"
+    auto_info = f"Auto margins (pages {page}-{end_page}): left={auto[0]}, right={auto[1]}"
+    return img_pil, info, img_arr, saved, auto_info, total
 
 
-def next_page(page: int, total: int) -> int:
-    """Переход к следующей странице."""
-    return min(page + 1, total)
-
-
-def first_page() -> int:
-    """Переход к первой странице."""
-    return 1
-
-
-def last_page(total: int) -> int:
-    """Переход к последней странице."""
-    return total
+def reset_margins(
+    file_obj,
+    page: int,
+    total: int
+) -> Tuple[Tuple[int, int], str]:
+    """Сбрасываем saved_margins по auto расчету от page до page+Config.AUTOCALC_PAGES"""
+    if not file_obj:
+        return (0, 0), ""
+    end_page = min(page + Config.AUTOCALC_PAGES, total)
+    candidates = compute_margins(file_obj.name, page, end_page)
+    auto = max(set(candidates), key=candidates.count)
+    text = f"Reset margins: left={auto[0]}, right={auto[1]}"
+    return auto, text
 
 
 def save_page_margins(
     file_obj,
     page_number: int,
-    saved: List[Tuple[int, int, int]]
-) -> Tuple[List[Tuple[int, int, int]], str]:
+    saved:Tuple[int, int]
+) -> Tuple[Tuple[int, int], str]:
     """
     Сохраняет вычисленные поля для текущей страницы.
     """
@@ -176,146 +174,78 @@ def save_page_margins(
         left, right = compute_margins(file_obj.name, page_number, page_number)[0]
     except Exception as e:
         return saved, f"Error computing margins: {e}"
-    entry = (page_number, left, right)
-    saved = [entry]
-    info = f"Page {page_number}: left={left}, right={right}"
+    saved = (left, right)
+    info = f"Saved margins for page {page_number}: left={left}, right={right}"
     return saved, info
-
-
-def process_pdf(
-    file_obj,
-    page_number: int
-) -> Tuple[Optional[Image.Image], str, Optional[np.ndarray]]:
-    """
-    Обрабатывает выбор страницы: возвращает изображение, информацию и массив для состояния.
-    """
-    if not file_obj:
-        return None, "", None
-    try:
-        img, total = pdf_to_image(file_obj.name, page_number)
-    except Exception as e:
-        return None, f"Error: {e}", None
-    info = f"Total pages: {total}"
-    return img, info, np.array(img)
-
-
-def on_file_change(
-    file_obj,
-    page_number: int
-) -> Tuple[
-    Optional[Image.Image], str, Optional[np.ndarray],
-    List[Tuple[int, int, int]], str,
-    Tuple[int, int], str, int
-]:
-    """
-    При загрузке нового файла: сбрасывает состояния и автоподсчет полей.
-    """
-    if not file_obj:
-        return None, "", None, [], "", (0, 0), "", 0
-    try:
-        img, total = pdf_to_image(file_obj.name, page_number)
-    except Exception as e:
-        return None, f"Error: {e}", None, [], "", (0, 0), "", 0
-    last = min(total, Config.AUTOCALC_PAGES)
-    try:
-        margins_list = compute_margins(file_obj.name, 1, last)
-        most_common = max(set(margins_list), key=margins_list.count)
-    except Exception:
-        most_common = (0, 0)
-    auto_info = f"Auto margins (first {last}): left={most_common[0]}, right={most_common[1]}"
-    return (
-        img,
-        f"Total pages: {total}",
-        np.array(img),
-        [],
-        "",
-        most_common,
-        auto_info,
-        total,
-    )
 
 
 def gradio_interface() -> None:
     with gr.Blocks(title="PDF Segmenter") as demo:
-        gr.Markdown("## Upload PDF, select page and adjust scanline with margins")
+        gr.Markdown("## PDF Segmenter: highlight margins and scanline")
         state_img = gr.State()
         state_y = gr.State(0)
-        state_saved = gr.State()
-        state_default_margins = gr.State((0, 0))
+        state_saved = gr.State((0, 0))
         state_total = gr.State(0)
 
         with gr.Row():
             with gr.Column():
+                file_input = gr.File(label="PDF file", file_types=[".pdf"])
+                page_num = gr.Number(value=1, label="Page number", precision=0)
                 page_info = gr.Textbox(label="Document info")
                 saved_info = gr.Textbox(label="Saved margins")
                 auto_info = gr.Textbox(label="Auto margins")
-
-                file_input = gr.File(label="PDF file", file_types=[".pdf"])
-                page_num = gr.Number(value=1, label="Page number", precision=0)
                 with gr.Row():
                     btn_first = gr.Button("First")
                     btn_prev = gr.Button("Prev")
                     btn_next = gr.Button("Next")
                     btn_last = gr.Button("Last")
+                btn_reset = gr.Button("Reset margins")
                 btn_save = gr.Button("Save margins")
                 step = gr.Number(value=Config.DEFAULT_STEP, label="Step", precision=0)
                 btn_up = gr.Button("Up")
                 btn_down = gr.Button("Down")
             with gr.Column():
                 output_image = gr.Image(type="pil", label="Preview")
-
-        scanline_img = gr.Image(type="pil", label="Scanline")
+                scanline_img = gr.Image(type="pil", label="Scanline")
 
         file_input.change(
-            fn=on_file_change,
+            fn=page_change,
             inputs=[file_input, page_num],
-            outputs=[
-                output_image, page_info, state_img,
-                state_saved, saved_info,
-                state_default_margins, auto_info,
-                state_total,
-            ],
+            outputs=[output_image, page_info, state_img, state_saved, auto_info, state_total]
         )
         page_num.change(
-            fn=process_pdf,
+            fn=page_change,
             inputs=[file_input, page_num],
-            outputs=[output_image, page_info, state_img],
+            outputs=[output_image, page_info, state_img, state_saved, auto_info, state_total]
         )
-        output_image.select(
-            fn=extract_scanline,
-            inputs=[state_img, state_default_margins],
-            outputs=[scanline_img, output_image, state_y],
-        )
-        btn_up.click(
-            fn=lambda img, y, s, m: move_scanline(img, y, -int(s), m),
-            inputs=[state_img, state_y, step, state_default_margins],
-            outputs=[scanline_img, output_image, state_y],
-        )
-        btn_down.click(
-            fn=lambda img, y, s, m: move_scanline(img, y, int(s), m),
-            inputs=[state_img, state_y, step, state_default_margins],
-            outputs=[scanline_img, output_image, state_y],
+        btn_first.click(lambda: 1, [], [page_num])
+        btn_prev.click(lambda p: max(p-1,1), [page_num], [page_num])
+        btn_next.click(lambda p,t: min(p+1,t), [page_num,state_total], [page_num])
+        btn_last.click(lambda t: t, [state_total], [page_num])
+        btn_reset.click(
+            fn=reset_margins,
+            inputs=[file_input, page_num, state_total],
+            outputs=[state_saved, saved_info]
         )
         btn_save.click(
             fn=save_page_margins,
             inputs=[file_input, page_num, state_saved],
-            outputs=[state_saved, saved_info],
+            outputs=[state_saved, saved_info]
         )
-        btn_prev.click(
-            fn=lambda p: prev_page(int(p)),
-            inputs=[page_num], outputs=[page_num]
+        output_image.select(
+            fn=extract_scanline,
+            inputs=[state_img, state_saved],
+            outputs=[scanline_img, output_image, state_y]
         )
-        btn_next.click(
-            fn=lambda p, t: next_page(int(p), int(t)),
-            inputs=[page_num, state_total], outputs=[page_num]
+        btn_up.click(
+            fn=lambda img, y, s, m: move_scanline(img, y, -int(s), m),
+            inputs=[state_img, state_y, step, state_saved],
+            outputs=[scanline_img, output_image, state_y]
         )
-        btn_first.click(
-            fn=first_page,
-            inputs=[], outputs=[page_num]
-        )
-        btn_last.click(
-            fn=last_page,
-            inputs=[state_total], outputs=[page_num]
+        btn_down.click(
+            fn=lambda img, y, s, m: move_scanline(img, y, int(s), m),
+            inputs=[state_img, state_y, step, state_saved],
+            outputs=[scanline_img, output_image, state_y]
         )
 
         demo.launch()
