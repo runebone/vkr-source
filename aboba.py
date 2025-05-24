@@ -1,5 +1,6 @@
 import logging
 from typing import Tuple, Optional, List
+from collections import Counter
 
 import gradio as gr
 import fitz  # PyMuPDF
@@ -13,6 +14,7 @@ DEFAULT_STEP = 2
 OVERLAY_COLOR_SELECT = np.array([0, 255, 0], dtype=np.float32)
 OVERLAY_COLOR_MOVE = np.array([0, 255, 0], dtype=np.float32)
 OVERLAY_ALPHA = 0.5
+AUTOCALC_PAGES = 10
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -194,6 +196,83 @@ def compute_margins(
     return margins
 
 
+def save_page_margins(
+    file_obj,
+    page_number: int,
+    margins_state: List[Tuple[int,int,int]]
+) -> Tuple[List[Tuple[int,int,int]], str]:
+    # вычисляем поля для одной страницы и добавляем в список
+    if file_obj is None:
+        return margins_state, ""
+    try:
+        left, right = compute_margins(file_obj.name, page_number, page_number)[0]
+    except Exception as e:
+        return margins_state, f"Ошибка вычисления: {e}"
+    # new_state = margins_state.copy()
+    # new_state.append((page_number, left, right))
+    new_state = [(page_number, left, right)]
+    lines = [f"Стр. {p}: лев={l}, прав={r}" for p, l, r in new_state]
+    info = "\n".join(lines)
+    return new_state, info
+
+
+def on_file_change(
+    file_obj,
+    page_number: int
+) -> Tuple[
+    Optional[Image.Image], str, Optional[np.ndarray],
+    List[Tuple[int,int,int]], str,
+    Tuple[int,int], str, int
+]:
+    """
+    При загрузке документа:
+    - конвертирует страницу
+    - сбрасывает список сохранённых полей
+    - вычисляет поля первых AUTOCALC_PAGES страниц
+    - выбирает наиболее часто встречающееся (автополя)
+    """
+    if file_obj is None:
+        return None, "", None, [], "", (0, 0), "", 0
+
+    try:
+        # превью выбранной страницы
+        img, total = pdf_to_image(file_obj.name, int(page_number))
+    except Exception as e:
+        return None, f"Ошибка: {e}", None, [], "", (0, 0), "", 0
+
+    # авто-вычисление полей
+    last_page = min(total, AUTOCALC_PAGES)
+    try:
+        margins_list = compute_margins(file_obj.name, 1, last_page)
+        most_common = Counter(margins_list).most_common(1)[0][0]
+    except Exception as e:
+        most_common = (0, 0)
+
+    # сброс сохранённых полей
+    saved = []
+    saved_info = ""
+    auto_info = f"Автополя (по первым {last_page} стр.): лев={most_common[0]}, прав={most_common[1]}"
+
+    return (
+        img,
+        f"Страниц в документе: {total}",
+        np.array(img),
+        saved,
+        saved_info,
+        most_common,
+        auto_info,
+        total
+    )
+
+
+def prev_page(page: int, total: int) -> int:
+    return max(page - 1, 1)
+
+
+def next_page(page: int, total: int) -> int:
+    return min(page + 1, total)
+
+
 def gradio_interface() -> None:
     with gr.Blocks(title="PDF Segmenter") as demo:
         gr.Markdown(
@@ -202,69 +281,54 @@ def gradio_interface() -> None:
 
         state_img_np = gr.State()
         scanline_y = gr.State(0)
+        saved_margins = gr.State()
+        default_margins = gr.State(value=(0, 0))
+        state_total = gr.State(value=0)
 
         output_image = gr.Image(type="pil", label="Результат разметки")
         scanline_output = gr.Image(type="pil")
         page_info = gr.Textbox(label="Информация о документе")
-        margins_info = gr.Textbox(label="Поля (левое и правое) по страницам")
+        margins_info = gr.Textbox(label="Сохраненные поля")
+        auto_margins_info = gr.Textbox(label="Автоматически выбранные поля")
 
         file_input = gr.File(label="PDF-документ", file_types=[".pdf"])
         page_number = gr.Number(value=1, label="Номер страницы", precision=0)
+        with gr.Row():
+            with gr.Column():
+                btn_prev = gr.Button("Предыдущая")
+            with gr.Column():
+                btn_next = gr.Button("Следующая")
+        save_margin_btn= gr.Button("Сохранить поля страницы")
         step_input = gr.Number(value=DEFAULT_STEP, label="Шаг", precision=0)
         btn_up = gr.Button("Вверх")
         btn_down = gr.Button("Вниз")
 
-        # def update_ui(file, page):
-        #     try:
-        #         img, info = process_pdf(file, int(page))
-        #         return img, info, np.array(img)
-        #     except Exception as e:
-        #         logger.exception("Ошибка при обработке PDF")
-        #         return None, f"Ошибка: {e}", None
-
-        def update_ui(
-            file_obj,
-            page: int
-        ) -> Tuple[Optional[Image.Image], str, Optional[np.ndarray], str]:
-            """
-            При выборе файла или страницы:
-            - конвертирует страницу в изображение
-            - возвращает изображение, информацию о страницах,
-              массив для scanline и информацию о полях
-            """
-            if file_obj is None:
-                return None, "", None, ""
-
-            # получаем картинку и количество страниц
+        def update_ui(file, page):
             try:
-                img, total = pdf_to_image(file_obj.name, int(page))
+                img, info = process_pdf(file, int(page))
+                return img, info, np.array(img)
             except Exception as e:
-                return None, f"Ошибка: {e}", None, ""
-
-            # вычисляем поля всего документа
-            try:
-                margins = compute_margins(file_obj.name, 1, total, scale=2, white_threshold=250)
-                # форматируем: "1: лев=50, прав=40; 2: лев=48, прав=42; ..."
-                margins_info = "; ".join(
-                    f"{i+1}: лев={l}, прав={r}" for i, (l, r) in enumerate(margins)
-                )
-            except Exception as e:
-                margins_info = f"Не удалось посчитать поля: {e}"
-
-            info = f"Страниц в документе: {total}"
-            return img, info, np.array(img), margins_info
+                logger.exception("Ошибка при обработке PDF")
+                return None, f"Ошибка: {e}", None
 
         file_input.change(
-            fn=update_ui,
+            fn=on_file_change,
             inputs=[file_input, page_number],
-            outputs=[output_image, page_info, state_img_np, margins_info],
-            # outputs=[output_image, page_info, state_img_np],
+            outputs=[
+                output_image,
+                page_info,
+                state_img_np,
+                saved_margins,
+                margins_info,
+                default_margins,
+                auto_margins_info,
+                state_total
+            ]
         )
         page_number.change(
             fn=update_ui,
             inputs=[file_input, page_number],
-            outputs=[output_image, page_info, state_img_np, margins_info],
-            # outputs=[output_image, page_info, state_img_np],
+            outputs=[output_image, page_info, state_img_np],
         )
         output_image.select(
             fn=extract_scanline,
@@ -280,6 +344,21 @@ def gradio_interface() -> None:
             fn=move_scanline,
             inputs=[state_img_np, scanline_y, step_input],
             outputs=[scanline_output, output_image, scanline_y],
+        )
+        save_margin_btn.click(
+            fn=save_page_margins,
+            inputs=[file_input, page_number, saved_margins],
+            outputs=[saved_margins, margins_info]
+        )
+        btn_prev.click(
+            fn=prev_page,
+            inputs=[page_number, state_total],
+            outputs=[page_number]
+        )
+        btn_next.click(
+            fn=next_page,
+            inputs=[page_number, state_total],
+            outputs=[page_number]
         )
 
         demo.launch()
