@@ -158,16 +158,6 @@ def extract_line_features(
         first_nonwhite_index,
     )
 
-    # return {
-    #     "count_white": count_white,
-    #     "count_color": count_color,
-    #     "count_gray": count_gray,
-    #     "comp_lengths": comp_lengths,
-    #     "gap_lengths": gap_lengths,
-    #     "color_comp_lengths": color_comp_lengths,
-    #     "first_nonwhite_index": first_nonwhite_index,
-    # }
-
 def classify_line(feat: LineFeatures):
     cond_background = (
         feat.first_nonwhite_index is None
