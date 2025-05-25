@@ -7,7 +7,7 @@ import fitz  # PyMuPDF
 import numpy as np
 from PIL import Image
 
-from ef import extract_line_features
+from ef import extract_line_features, classify_line_str
 
 # Настройки приложения
 autolog = logging.getLogger(__name__)
@@ -95,7 +95,9 @@ def overlay_scanline(
     overlay = np.clip(overlay, 0, 255).astype(np.uint8)
     slice_img = img[y : y + height]
 
-    print(extract_line_features(slice_img))
+    feat = extract_line_features(slice_img)
+    print(feat)
+    print(classify_line_str(feat))
 
     return slice_img, overlay
 
