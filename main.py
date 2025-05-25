@@ -7,7 +7,7 @@ import fitz  # PyMuPDF
 import numpy as np
 from PIL import Image
 
-from ef import extract_line_features, classify_line_str
+from logic import extract_line_features, classify_line_str
 
 # Настройки приложения
 autolog = logging.getLogger(__name__)
