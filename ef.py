@@ -1,46 +1,9 @@
 import numpy as np
-from typing import List, Tuple, Dict, Callable, Optional
+from typing import List, Tuple, Callable, Optional
 from dataclasses import dataclass
 
-class State:
-    UNDEFINED         = 0
-    BACKGROUND        = 1
-    FEW_TEXT          = 2
-    MANY_TEXT         = 3
-    COLOR             = 4
-    MEDIUM_BLACK_LINE = 5
-    LONG_BLACK_LINE   = 6
-
-StateNames = {
-    State.UNDEFINED:         "Undefined",
-    State.BACKGROUND:        "Background",
-    State.FEW_TEXT:          "Few Text",
-    State.MANY_TEXT:         "Many Text",
-    State.COLOR:             "Color",
-    State.MEDIUM_BLACK_LINE: "Medium Black Line",
-    State.LONG_BLACK_LINE:   "Long Black Line",
-}
-
-class Class:
-    UNDEFINED  = 0
-    BACKGROUND = 1
-    TEXT       = 2
-    TABLE      = 3
-    CODE       = 4
-    DIAGRAM    = 5
-    FIGURE     = 6
-    PLOT       = 7
-
-ClassNames = {
-    Class.UNDEFINED:  "Undefined",
-    Class.BACKGROUND: "Background",
-    Class.TEXT:       "Text",
-    Class.TABLE:      "Table",
-    Class.CODE:       "Code",
-    Class.DIAGRAM:    "Diagram",
-    Class.FIGURE:     "Figure",
-    Class.PLOT:       "Plot",
-}
+from states import State, StateNames, Class, ClassNames
+from fsm import FSM, assert_not_forbidden_combo
 
 @dataclass
 class LineFeatures:
@@ -205,6 +168,96 @@ def extract_line_features(
     #     "first_nonwhite_index": first_nonwhite_index,
     # }
 
+def classify_line(feat: LineFeatures):
+    cond_background = (
+        feat.first_nonwhite_index is None
+    )
+    if cond_background:
+        return State.BACKGROUND
+
+    length = feat.count_white + feat.count_gray + feat.count_color
+    has_single_gray_comp = (
+        len(feat.comp_lengths) == 1 and
+        len(feat.gap_lengths) == 0 and
+        len(feat.color_comp_lengths) == 0
+    )
+    pretty_long_gray_comp = (
+        feat.count_gray > length / 2 # XXX: More than half line
+    )
+    cond_long_black_line = (
+        has_single_gray_comp and
+        pretty_long_gray_comp
+    )
+    if cond_long_black_line:
+        return State.LONG_BLACK_LINE
+
+    has_medium_sized_gray_comp = (
+        any(i > length / 20 for i in feat.gray_comp_lengths) # XXX: magic
+    )
+    cond_medium_black_line = (
+        has_medium_sized_gray_comp
+    )
+    if cond_medium_black_line:
+        return State.MEDIUM_BLACK_LINE
+
+    n = 80 # XXX: magic
+    has_a_fucking_lot_of_comps = (
+        len(feat.comp_lengths) > 100 # XXX: magic
+    )
+    has_a_lot_of_comps_and_no_color = (
+        len(feat.comp_lengths) > n and
+        feat.count_color == 0
+    )
+    cond_many_text = (
+        has_a_fucking_lot_of_comps or
+        has_a_lot_of_comps_and_no_color
+    )
+    if cond_many_text:
+        return State.MANY_TEXT
+
+    has_color = (
+        feat.count_color > 0
+    )
+    cond_color = (
+        has_color
+    )
+    if cond_color:
+        return State.COLOR
+
+    mean_comp = np.mean(feat.comp_lengths)
+    mean_gap = np.mean(feat.gap_lengths)
+    std_gap = np.std(feat.gap_lengths)
+    z_scores = (np.array(feat.gap_lengths) - mean_gap) / std_gap
+    has_huge_gaps = any(abs(z) > 6 for z in z_scores) # XXX: magic
+    # print(f"mean_comp: {mean_comp}, mean_gap: {mean_gap}, z_scores: {z_scores}")
+    has_a_few_comps = (
+        len(feat.comp_lengths) <= n
+    )
+    comps_are_mostly_small = (
+        mean_comp < 20 # XXX: magic
+    )
+    gaps_are_mostly_small = (
+        mean_gap < 20 # XXX: magic
+    )
+    cond_few_text = (
+        has_a_few_comps and
+        comps_are_mostly_small and
+        gaps_are_mostly_small and
+        not has_huge_gaps
+    )
+    if cond_few_text:
+        return State.FEW_TEXT
+
+    return State.UNDEFINED
+
+
+def classify_line_str(feat: LineFeatures):
+    return StateNames[classify_line(feat)]
+
+def update_state(state: int, feat: LineFeatures):
+    inferred_state = classify_line(feat)
+    assert_not_forbidden_combo(state, inferred_state)
+    return FSM[state][inferred_state]
 
 def handle_undefined(sd: SegmentData):
     pass
@@ -242,97 +295,6 @@ def classify_segment(state: int, sd: SegmentData):
     assert handler is not None
 
     return handler(sd)
-
-def classify_line(feat: LineFeatures):
-    cond_background = (
-        feat.first_nonwhite_index is None
-    )
-    if cond_background:
-        return State.BACKGROUND
-
-    length = feat.count_white + feat.count_gray + feat.count_color
-    has_single_comp = (
-        len(feat.comp_lengths) == 1 and
-        len(feat.gap_lengths) == 0 and
-        len(feat.color_comp_lengths) == 0
-    )
-    pretty_long_comp = (
-        feat.count_gray > length / 2 # XXX: More than half line
-    )
-    cond_long_black_line = (
-        has_single_comp and
-        pretty_long_comp
-    )
-    if cond_long_black_line:
-        return State.LONG_BLACK_LINE
-
-    has_medium_sized_comp = (
-        any(i > length / 20 for i in feat.gray_comp_lengths) # XXX: magic 20
-    )
-    cond_medium_black_line = (
-        has_medium_sized_comp
-    )
-    if cond_medium_black_line:
-        return State.MEDIUM_BLACK_LINE
-
-    n = 70 # XXX: magic 70
-    has_a_fucking_lot_of_comps = (
-        len(feat.comp_lengths) > 100 # XXX: magic 100
-    )
-    has_a_lot_of_comps_and_no_color = (
-        len(feat.comp_lengths) > n and
-        feat.count_color == 0
-    )
-    cond_many_text = (
-        has_a_fucking_lot_of_comps or
-        has_a_lot_of_comps_and_no_color
-    )
-    if cond_many_text:
-        return State.MANY_TEXT
-
-    has_color = (
-        feat.count_color > 0
-    )
-    cond_color = (
-        has_color
-    )
-    if cond_color:
-        return State.COLOR
-
-    mean_comp = np.mean(feat.comp_lengths)
-    mean_gap = np.mean(feat.gap_lengths)
-    std_gap = np.std(feat.gap_lengths)
-    z_scores = (np.array(feat.gap_lengths) - mean_gap) / std_gap
-    has_huge_gaps = any(abs(z) > 6 for z in z_scores) # XXX: magic 6
-    # print(f"mean_comp: {mean_comp}, mean_gap: {mean_gap}, z_scores: {z_scores}")
-    has_a_few_comps = (
-        len(feat.comp_lengths) <= n
-    )
-    comps_are_mostly_small = (
-        mean_comp < 20 # XXX: magic 20
-    )
-    gaps_are_mostly_small = (
-        mean_gap < 20 # XXX: magic 20
-    )
-    cond_few_text = (
-        has_a_few_comps and
-        comps_are_mostly_small and
-        gaps_are_mostly_small and
-        not has_huge_gaps
-    )
-    if cond_few_text:
-        return State.FEW_TEXT
-
-    return State.UNDEFINED
-
-
-def classify_line_str(feat: LineFeatures):
-    return StateNames[classify_line(feat)]
-
-
-def update_state(state: int, feat: LineFeatures):
-    pass
-
 
 def segment_document(
     image: np.ndarray,
