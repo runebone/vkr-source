@@ -7,7 +7,7 @@ import fitz  # PyMuPDF
 import numpy as np
 from PIL import Image
 
-from logic import extract_line_features, classify_line_str
+from logic import extract_line_features, classify_line_str, segdoc
 
 # Настройки приложения
 autolog = logging.getLogger(__name__)
@@ -26,6 +26,49 @@ class Config:
     AUTOCALC_PAGES: int = 10
     WHITE_THRESHOLD: int = 250
     GRAY_WEIGHTS: Tuple[float, float, float] = (0.299, 0.587, 0.114)
+
+
+def color_segments_pil(image: Image.Image, segments: np.ndarray) -> Image.Image:
+    """
+    Окрашивает строки изображения по сегментам без OpenCV.
+
+    Параметры:
+    - image: PIL.Image — входное изображение.
+    - segments: np.ndarray — массив [y_start, y_end, class_name].
+
+    Возвращает:
+    - PIL.Image — изображение с закрашенными областями.
+    """
+    # Преобразуем в RGB и NumPy
+    image = image.convert("RGB")
+    np_image = np.array(image)
+
+    # Цвета для классов
+    color_map = {
+        'Background': (255, 255, 255),
+        'TODO UNDEFINED': (255, 255, 0),
+        'TODO FEW TEXT': (0, 255, 0),
+        'TODO MANY TEXT': (255, 0, 255),
+        'TODO COLOR': (0, 255, 255),
+        'TODO MEDIUM BLACK LINE': (255, 0, 0),
+        'TODO LONG BLACK LINE': (0, 0, 255),
+    }
+
+    # Полупрозрачное наложение (альфа смешивание)
+    alpha = 0.5
+
+    for row in segments:
+        y_start = int(row[0])
+        y_end = int(row[1])
+        class_name = row[2]
+
+        color = np.array(color_map.get(class_name, (0, 255, 0)))
+
+        # Получаем нужную часть и смешиваем с цветом
+        segment_slice = np_image[y_start:y_end]
+        np_image[y_start:y_end] = (segment_slice * (1 - alpha) + color * alpha).astype(np.uint8)
+
+    return Image.fromarray(np_image)
 
 
 def pdf_to_image(pdf_path: str, page_number: int) -> Tuple[Image.Image, int]:
@@ -142,6 +185,11 @@ def page_change(
     except Exception:
         return None, None, 0
     img_arr = np.array(img_pil)
+
+    data = segdoc(img_arr)
+    print(data)
+    img_pil = color_segments_pil(img_pil, data)
+
     return img_pil, img_arr, total
 
 def file_upload(

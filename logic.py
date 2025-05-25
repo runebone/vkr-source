@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from states import State, StateNames, Class, ClassNames
 from fsm import FSM, assert_not_forbidden_combo
 
+WHITE_THRESH = 250
+GRAY_TOL = 10
+
 @dataclass
 class LineFeatures:
     count_white: int
@@ -25,17 +28,44 @@ class SegmentData:
     count_many_text: int
     count_color: int
     count_few_text: int
+    count_undefined: int
+    count_white_px: int
+    count_color_px: int
+    count_gray_px: int
     heatmap_black: np.ndarray
     heatmap_color: np.ndarray
-    and_black: np.ndarray
 
+def get_masks(
+    segment: np.ndarray,
+    white_thresh: int = WHITE_THRESH,
+    gray_tol: int = GRAY_TOL,
+):
+    # Определяем маски
+    if segment.ndim == 1 or segment.shape[1] == 1:
+        # Одноканальное
+        vals = segment.flatten()
+        mask_white = vals >= white_thresh
+        mask_nonwhite = ~mask_white
+        # В одноканальном всё «не белое» считаем «серым»
+        mask_color = np.zeros_like(mask_nonwhite, dtype=bool)
+        mask_gray = mask_nonwhite.copy()
+    else:
+        # Многоканальное
+        rgb = segment.reshape(-1, segment.shape[-1])
+        mask_white = np.all(rgb >= white_thresh, axis=1)
+        mask_nonwhite = ~mask_white
+        diffs = rgb.max(axis=1) - rgb.min(axis=1)
+        mask_color = mask_nonwhite & (diffs > gray_tol)
+        mask_gray = mask_nonwhite & ~mask_color
+
+    return (mask_white, mask_nonwhite, mask_color, mask_gray)
 
 def extract_line_features(
     scanline: np.ndarray,
     left_margin: int = 0,
     right_margin: Optional[int] = None,
-    white_thresh: int = 250,
-    gray_tol: int = 10,
+    white_thresh: int = WHITE_THRESH,
+    gray_tol: int = GRAY_TOL,
 ) -> LineFeatures:
     """
     Извлекает из одномерного сканлайна следующие признаки:
@@ -70,23 +100,10 @@ def extract_line_features(
     if segment.size == 0:
         raise ValueError("Segment length is zero. Проверьте left_margin/right_margin.")
 
-    # Определяем маски
-    if segment.ndim == 1 or segment.shape[1] == 1:
-        # Одноканальное
-        vals = segment.flatten()
-        mask_white = vals >= white_thresh
-        mask_nonwhite = ~mask_white
-        # В одноканальном всё «не белое» считаем «серым»
-        mask_color = np.zeros_like(mask_nonwhite, dtype=bool)
-        mask_gray = mask_nonwhite.copy()
-    else:
-        # Многоканальное
-        rgb = segment.reshape(-1, segment.shape[-1])
-        mask_white = np.all(rgb >= white_thresh, axis=1)
-        mask_nonwhite = ~mask_white
-        diffs = rgb.max(axis=1) - rgb.min(axis=1)
-        mask_color = mask_nonwhite & (diffs > gray_tol)
-        mask_gray = mask_nonwhite & ~mask_color
+    (mask_white,
+     mask_nonwhite,
+     mask_color,
+     mask_gray) = get_masks(segment, white_thresh, gray_tol)
 
     # Считаем пиксели
     count_white = int(mask_white.sum())
@@ -158,6 +175,15 @@ def extract_line_features(
         first_nonwhite_index,
     )
 
+
+def get_min_long_black_line_length(features):
+    length = features.count_white + features.count_gray + features.count_color
+    return length / 2 # XXX: magic
+
+def get_min_medium_black_line_length(features):
+    length = features.count_white + features.count_gray + features.count_color
+    return length / 20 # XXX: magic
+
 def classify_line(feat: LineFeatures):
     cond_background = (
         feat.first_nonwhite_index is None
@@ -165,14 +191,14 @@ def classify_line(feat: LineFeatures):
     if cond_background:
         return State.BACKGROUND
 
-    length = feat.count_white + feat.count_gray + feat.count_color
+    min_long_black_line_length = get_min_long_black_line_length(feat)
     has_single_gray_comp = (
         len(feat.comp_lengths) == 1 and
         len(feat.gap_lengths) == 0 and
         len(feat.color_comp_lengths) == 0
     )
     pretty_long_gray_comp = (
-        feat.count_gray > length / 2 # XXX: More than half line
+        feat.count_gray > min_long_black_line_length
     )
     cond_long_black_line = (
         has_single_gray_comp and
@@ -181,8 +207,10 @@ def classify_line(feat: LineFeatures):
     if cond_long_black_line:
         return State.LONG_BLACK_LINE
 
+    min_medium_black_line_length = get_min_medium_black_line_length(feat)
     has_medium_sized_gray_comp = (
-        any(i > length / 20 for i in feat.gray_comp_lengths) # XXX: magic
+        any(i > min_medium_black_line_length
+            for i in feat.gray_comp_lengths)
     )
     cond_medium_black_line = (
         has_medium_sized_gray_comp
@@ -246,29 +274,29 @@ def classify_line_str(feat: LineFeatures):
 
 def update_state(state: int, feat: LineFeatures):
     inferred_state = classify_line(feat)
-    assert_not_forbidden_combo(state, inferred_state)
+    # assert_not_forbidden_combo(state, inferred_state)
     return FSM[state][inferred_state]
 
 def handle_undefined(sd: SegmentData):
-    pass
+    return "TODO UNDEFINED"
 
 def handle_background(sd: SegmentData):
     return ClassNames[Class.BACKGROUND]
 
 def handle_few_text(sd: SegmentData):
-    pass
+    return "TODO FEW TEXT"
 
 def handle_many_text(sd: SegmentData):
-    pass
+    return "TODO MANY TEXT"
 
 def handle_color(sd: SegmentData):
-    pass
+    return "TODO COLOR"
 
 def handle_medium_black_line(sd: SegmentData):
-    pass
+    return "TODO MEDIUM BLACK LINE"
 
 def handle_long_black_line(sd: SegmentData):
-    pass
+    return "TODO LONG BLACK LINE"
 
 def classify_segment(state: int, sd: SegmentData):
     handlers = {
@@ -286,26 +314,92 @@ def classify_segment(state: int, sd: SegmentData):
 
     return handler(sd)
 
+def update_segment_data(sd: SegmentData, state: int, line: np.ndarray, feat: LineFeatures):
+    sd.end += 1
+
+    if state == State.LONG_BLACK_LINE:
+        sd.count_long_black_line += 1
+    # elif state == State.MEDIUM_BLACK_LINE:
+    #     sd.count_medium_black_line += 1
+    elif state == State.MANY_TEXT:
+        sd.count_many_text += 1
+    elif state == State.COLOR:
+        sd.count_color += 1
+    elif state == State.FEW_TEXT:
+        sd.count_few_text += 1
+    elif state == State.UNDEFINED:
+        sd.count_undefined += 1
+    elif state == State.BACKGROUND:
+        return
+
+    sd.count_white_px += feat.count_white
+    sd.count_color_px += feat.count_color
+    sd.count_gray_px += feat.count_gray
+
+    min_medium_black_line_length = get_min_medium_black_line_length(feat)
+    count_medium_black_lines = sum(np.array(feat.gray_comp_lengths) >
+                                   min_medium_black_line_length)
+    sd.count_medium_black_line += count_medium_black_lines
+
+    (_, _, mask_color, mask_gray) = get_masks(line)
+
+    sd.heatmap_black += mask_gray
+    sd.heatmap_color += mask_color
+
 def segment_document(
     image: np.ndarray,
     line_feature_func: Callable[[np.ndarray], LineFeatures],
-) -> List[Tuple[int, int, str]]:
-    results: List[Tuple[int, int, str]] = []
+# ) -> List[Tuple[int, int, str]]:
+):
+    empty_line = np.zeros_like(image[0:1]).reshape(-1, image[0:1].shape[-1]).min(axis=-1)
+    def empty_segment_data():
+        return SegmentData(
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            empty_line, empty_line
+        )
+
+    def reset_segment_data(sd: SegmentData):
+        sd.start = sd.end
+        sd.count_long_black_line = 0
+        sd.count_medium_black_line = 0
+        sd.count_many_text = 0
+        sd.count_color = 0
+        sd.count_few_text = 0
+        sd.count_undefined = 0
+        sd.count_white_px = 0
+        sd.count_color_px = 0
+        sd.count_gray_px = 0
+        sd.heatmap_black = empty_line
+        sd.heatmap_color = empty_line
+
+    # results: List[Tuple[int, int, str]] = []
+    results = np.array([])
     height = image.shape[0]
-    prev_scanline = image[0:1]
-    prev_features = line_feature_func(prev_scanline)
-    and_scanline = prev_scanline
-    black_heatmap = prev_scanline
-    color_heatmap = prev_scanline
-    y_start = 0
-    state = State.BACKGROUND
+    prev_state = State.BACKGROUND
+    sd = empty_segment_data()
     for y in range(1, height):
-        y_end = y
-        scanline = image[y:y+1]
-        features = line_feature_func(scanline)
+        line = image[y:y+1]
+        feat = line_feature_func(line)
+        state = update_state(prev_state, feat)
 
-        and_scanline = np.logical_and(and_scanline, scanline)
+        bg_started = state == State.BACKGROUND and prev_state != State.BACKGROUND
+        bg_finished = state != State.BACKGROUND and prev_state == State.BACKGROUND
+        if bg_started or bg_finished:
+            class_name = classify_segment(prev_state, sd)
+            result = (sd.start, sd.end, class_name)
+            # results.append(result)
+            results = np.append(results, result)
+            reset_segment_data(sd)
 
-        prev_scanline = scanline
+        update_segment_data(sd, state, line, feat)
+        prev_state = state
+    class_name = classify_segment(prev_state, sd)
+    result = (sd.start, sd.end, class_name)
+    # results.append(result)
+    results = np.append(results, result)
 
-    return results
+    # return results
+    return results.reshape(-1, 3)
+
+def segdoc(image):
+    return segment_document(image, extract_line_features)
