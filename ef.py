@@ -8,109 +8,124 @@ def extract_line_features(
     right_margin: Optional[int] = None,
     white_thresh: int = 250,
     gray_tol: int = 10,
-    long_comp_thresh: int = 50
 ) -> Dict[str, object]:
     """
-    Извлекает признаки из строки пикселей.
+    Извлекает из одномерного сканлайна следующие признаки:
+      1) count_white            — число белых пикселей
+      2) count_color            — число цветных (несерых) пикселей
+      3) count_gray             — число серых пикселей
+      4) comp_lengths           — длины связных компонент не белых пикселей
+      5) gap_lengths            — длины пробелов (белых) между такими компонентами
+      6) color_comp_lengths     — длины компонент цветных (несерых) пикселей
+      7) first_nonwhite_index   — индекс первого не белого пикселя в исходном массиве
+    Параметры
+    ----------
+    scanline : np.ndarray
+        Массив пикселей формы (W,) или (W, C).
+    left_margin : int
+        Левая граница включительно.
+    right_margin : Optional[int]
+        Правая граница исключая. Если None — до конца.
+    white_thresh : int
+        Порог для «белого» (0–255).
+    gray_tol : int
+        Допуск по каналам для «серого».
 
-    Параметры:
-    - scanline: одномерный массив пикселей (W или W x C).
-    - left_margin: индекс левого отступа (включительно).
-    - right_margin: индекс правого отступа (исключительно). Если None, до конца.
-    - white_thresh: порог для определения белых пикселей (0-255).
-    - gray_tol: допуск для определения серых пикселей (разница каналов).
-    - long_comp_thresh: минимальная длина для выделения "длинных" компонент.
-
-    Возвращает словарь с признаками:
-      1) 'ratio_nonwhite': отношение не белых пикселей к общей длине.
-      2) 'has_nongray': наличие не серых пикселей.
-      3) 'n_components': количество связных компонент не белых пикселей.
-      4) 'avg_comp_length': средняя длина компонент.
-      5) 'std_comp_length': стандартное отклонение длин.
-      6) 'min_comp_length': минимальная длина.
-      7) 'max_comp_length': максимальная длина.
-      8) 'centers_long_comps': центры масс длинных компонент.
+    Возвращает
+    -------
+    Dict[str, object]
+        Словарь с ключами, перечисленными выше.
     """
-    # Определяем границы
-    if scanline.ndim == 1:
-        data = scanline
-    else:
-        data = scanline
+    # Выбор сегмента
+    end = right_margin if right_margin is not None else scanline.shape[0]
+    segment = scanline[left_margin:end]
+    if segment.size == 0:
+        raise ValueError("Segment length is zero. Проверьте left_margin/right_margin.")
 
-    end = right_margin if right_margin is not None else data.shape[0]
-    segment = data[left_margin:end]
-    length = segment.shape[0]
-    if length == 0:
-        raise ValueError("Segment length is zero. Проверьте margins.")
-
-    # Маска не белых пикселей
+    # Определяем маски
     if segment.ndim == 1 or segment.shape[1] == 1:
-        # Градает одноканальную
+        # Одноканальное
         vals = segment.flatten()
-        mask_nonwhite = vals < white_thresh
-        mask_nongray = np.zeros_like(mask_nonwhite, dtype=bool)
+        mask_white = vals >= white_thresh
+        mask_nonwhite = ~mask_white
+        # В одноканальном всё «не белое» считаем «серым»
+        mask_color = np.zeros_like(mask_nonwhite, dtype=bool)
+        mask_gray = mask_nonwhite.copy()
     else:
-        # Цветное изображение (W x C)
+        # Многоканальное
         rgb = segment.reshape(-1, segment.shape[-1])
-        # Белый: все каналы >= white_thresh
-        mask_nonwhite = np.any(rgb < white_thresh, axis=1)
-        # Серый: все каналы близки друг к другу
+        mask_white = np.all(rgb >= white_thresh, axis=1)
+        mask_nonwhite = ~mask_white
         diffs = rgb.max(axis=1) - rgb.min(axis=1)
-        mask_nongray = mask_nonwhite & (diffs > gray_tol)
+        mask_color = mask_nonwhite & (diffs > gray_tol)
+        mask_gray = mask_nonwhite & ~mask_color
 
-    # Признак 1: отношение не белых
-    ratio_nonwhite = mask_nonwhite.sum() / length
-    # Признак 2: наличие не серых
-    has_nongray = bool(mask_nongray.any())
+    # Считаем пиксели
+    count_white = int(mask_white.sum())
+    count_color = int(mask_color.sum())
+    count_gray = int(mask_gray.sum())
 
-    # Находим связные компоненты (True-run lengths)
-    comp_lengths: List[int] = []
-    comp_starts: List[int] = []
+    # Функция для подсчёта run-length encoding
+    def _rle_lengths(mask: np.ndarray) -> List[int]:
+        lengths: List[int] = []
+        in_run = False
+        run_len = 0
+        for flag in mask:
+            if flag:
+                if not in_run:
+                    in_run = True
+                    run_len = 1
+                else:
+                    run_len += 1
+            else:
+                if in_run:
+                    lengths.append(run_len)
+                    in_run = False
+        if in_run:
+            lengths.append(run_len)
+        return lengths
+
+    comp_lengths = _rle_lengths(mask_nonwhite)
+    color_comp_lengths = _rle_lengths(mask_color)
+
+    # Вычисляем длины пробелов между компонентами
+    gap_lengths: List[int] = []
+    # находим старты и длины nonwhite-компонент
+    starts: List[int] = []
     in_comp = False
-    comp_len = 0
-    for idx, val in enumerate(mask_nonwhite):
-        if val:
+    curr_len = 0
+    for idx, flag in enumerate(mask_nonwhite):
+        if flag:
             if not in_comp:
                 in_comp = True
-                comp_len = 1
-                comp_starts.append(idx)
+                curr_len = 1
+                starts.append(idx)
             else:
-                comp_len += 1
+                curr_len += 1
         else:
             if in_comp:
-                comp_lengths.append(comp_len)
                 in_comp = False
-    # Дозапись последней
-    if in_comp:
-        comp_lengths.append(comp_len)
+    # если компонент последний не закрыт — закрываем
+    # (но для gap_lengths достаточно стартов и comp_lengths)
+    for (s, l), (next_s, _) in zip(zip(starts, comp_lengths), zip(starts[1:], comp_lengths[1:])):
+        gap = next_s - (s + l)
+        if gap > 0:
+            gap_lengths.append(gap)
 
-    n_components = len(comp_lengths)
-    if n_components > 0:
-        avg_comp_length = float(np.mean(comp_lengths))
-        std_comp_length = float(np.std(comp_lengths, ddof=0))
-        min_comp_length = int(np.min(comp_lengths))
-        max_comp_length = int(np.max(comp_lengths))
-    else:
-        avg_comp_length = std_comp_length = 0.0
-        min_comp_length = max_comp_length = 0
-
-    # Признак 8: центры масс длинных компонен
-    centers_long_comps: List[float] = []
-    for start, comp_len in zip(comp_starts, comp_lengths):
-        if comp_len >= long_comp_thresh:
-            center = left_margin + start + comp_len / 2.0
-            centers_long_comps.append(center)
+    # Индекс первого не белого пикселя в исходном scanline
+    nonwhite_idxs = np.nonzero(mask_nonwhite)[0]
+    first_nonwhite_index = (
+        int(nonwhite_idxs[0] + left_margin) if nonwhite_idxs.size > 0 else None
+    )
 
     return {
-        'ratio_nonwhite': ratio_nonwhite,
-        'has_nongray': has_nongray,
-        'n_components': n_components,
-        'avg_comp_length': avg_comp_length,
-        'std_comp_length': std_comp_length,
-        'min_comp_length': min_comp_length,
-        'max_comp_length': max_comp_length,
-        'centers_long_comps': centers_long_comps,
-        'comp_lengths': comp_lengths
+        "count_white": count_white,
+        "count_color": count_color,
+        "count_gray": count_gray,
+        "comp_lengths": comp_lengths,
+        "gap_lengths": gap_lengths,
+        "color_comp_lengths": color_comp_lengths,
+        "first_nonwhite_index": first_nonwhite_index,
     }
 
 
