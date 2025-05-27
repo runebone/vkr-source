@@ -8,6 +8,9 @@ import numpy as np
 from PIL import Image
 
 from logic import extract_line_features, classify_line_str, segdoc
+from states import State, StateNames
+
+import time
 
 # Настройки приложения
 autolog = logging.getLogger(__name__)
@@ -19,7 +22,7 @@ COLOR_MARGIN = np.array([255, 0, 0], dtype=np.float32)   # красный
 
 @dataclass(frozen=True)
 class Config:
-    SCALE_FACTOR: int = 3
+    SCALE_FACTOR: float = 3
     SCANLINE_HEIGHT: int = 1
     DEFAULT_STEP: int = 1
     OVERLAY_ALPHA: float = 0.5
@@ -45,21 +48,21 @@ def color_segments_pil(image: Image.Image, segments: np.ndarray) -> Image.Image:
 
     # Цвета для классов
     color_map = {
-        'Background': (255, 255, 255),
-        'TODO UNDEFINED': (255, 255, 0),
-        'TODO FEW TEXT': (0, 255, 0),
-        'TODO MANY TEXT': (255, 0, 255),
-        'TODO COLOR': (0, 255, 255),
-        'TODO MEDIUM BLACK LINE': (255, 0, 0),
-        'TODO LONG BLACK LINE': (0, 0, 255),
+        StateNames[State.BACKGROUND]: (255, 255, 255),
+        StateNames[State.UNDEFINED]: (255, 255, 0),
+        StateNames[State.FEW_TEXT]: (0, 255, 0),
+        StateNames[State.MANY_TEXT]: (255, 0, 255),
+        StateNames[State.COLOR]: (0, 255, 255),
+        StateNames[State.MEDIUM_BLACK_LINE]: (255, 0, 0),
+        StateNames[State.LONG_BLACK_LINE]: (0, 0, 255),
     }
 
     # Полупрозрачное наложение (альфа смешивание)
     alpha = 0.5
 
     for row in segments:
-        y_start = int(row[0])
-        y_end = int(row[1])
+        y_start = int(row[0]) + 1
+        y_end = int(row[1]) + 1
         class_name = row[2]
 
         color = np.array(color_map.get(class_name, (0, 255, 0)))
@@ -87,7 +90,7 @@ def compute_margins(
     pdf_path: str,
     start_page: int,
     end_page: int,
-    scale: int = Config.SCALE_FACTOR,
+    scale: float = Config.SCALE_FACTOR,
     white_threshold: int = Config.WHITE_THRESHOLD,
 ) -> List[Tuple[int, int]]:
     """
@@ -138,9 +141,9 @@ def overlay_scanline(
     overlay = np.clip(overlay, 0, 255).astype(np.uint8)
     slice_img = img[y : y + height]
 
-    feat = extract_line_features(slice_img)
-    print(feat)
-    print(classify_line_str(feat))
+    # feat = extract_line_features(slice_img)
+    # print(feat)
+    # print(classify_line_str(feat))
 
     return slice_img, overlay
 
@@ -186,8 +189,11 @@ def page_change(
         return None, None, 0
     img_arr = np.array(img_pil)
 
+    # start = time.perf_counter()
     data = segdoc(img_arr)
-    print(data)
+    # end = time.perf_counter()
+    # print(data)
+    # print(end - start)
     img_pil = color_segments_pil(img_pil, data)
 
     return img_pil, img_arr, total
@@ -274,7 +280,8 @@ def gradio_interface() -> None:
 
         file_input.change(
             fn=file_upload,
-            inputs=[file_input, page_num],
+            inputs=[file_input, page_num], # TODO: start with first page, but
+                                           # it tracks memory change on page_num
             outputs=[output_image, page_info, state_img, state_saved, auto_info, state_total]
         )
         page_num.change(

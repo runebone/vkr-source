@@ -24,7 +24,7 @@ FSM = {
         State.UNDEFINED:         State.MANY_TEXT,
         State.MANY_TEXT:         State.MANY_TEXT,
         State.FEW_TEXT:          State.MANY_TEXT,
-        State.LONG_BLACK_LINE:   State.LONG_BLACK_LINE, # XXX: ?
+        State.LONG_BLACK_LINE:   State.MANY_TEXT,
         State.MEDIUM_BLACK_LINE: State.MEDIUM_BLACK_LINE, # XXX: ?
         State.COLOR:             State.MANY_TEXT,
         State.BACKGROUND:        State.BACKGROUND,

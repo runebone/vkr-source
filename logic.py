@@ -1,11 +1,11 @@
 import numpy as np
-from typing import List, Tuple, Callable, Optional
+from typing import List, Callable, Optional, Tuple
 from dataclasses import dataclass
 
 from states import State, StateNames, Class, ClassNames
 from fsm import FSM, assert_not_forbidden_combo
 
-WHITE_THRESH = 250
+WHITE_THRESH = 200
 GRAY_TOL = 10
 
 @dataclass
@@ -278,25 +278,25 @@ def update_state(state: int, feat: LineFeatures):
     return FSM[state][inferred_state]
 
 def handle_undefined(sd: SegmentData):
-    return "TODO UNDEFINED"
+    return StateNames[State.UNDEFINED] # TODO:
 
 def handle_background(sd: SegmentData):
-    return ClassNames[Class.BACKGROUND]
+    return ClassNames[Class.BACKGROUND] # TODO:
 
 def handle_few_text(sd: SegmentData):
-    return "TODO FEW TEXT"
+    return StateNames[State.FEW_TEXT] # TODO:
 
 def handle_many_text(sd: SegmentData):
-    return "TODO MANY TEXT"
+    return StateNames[State.MANY_TEXT] # TODO:
 
 def handle_color(sd: SegmentData):
-    return "TODO COLOR"
+    return StateNames[State.COLOR] # TODO:
 
 def handle_medium_black_line(sd: SegmentData):
-    return "TODO MEDIUM BLACK LINE"
+    return StateNames[State.MEDIUM_BLACK_LINE] # TODO:
 
 def handle_long_black_line(sd: SegmentData):
-    return "TODO LONG BLACK LINE"
+    return StateNames[State.LONG_BLACK_LINE] # TODO:
 
 def classify_segment(state: int, sd: SegmentData):
     handlers = {
@@ -341,7 +341,7 @@ def update_segment_data(sd: SegmentData, state: int, line: np.ndarray, feat: Lin
                                    min_medium_black_line_length)
     sd.count_medium_black_line += count_medium_black_lines
 
-    (_, _, mask_color, mask_gray) = get_masks(line)
+    (_, _, mask_color, mask_gray) = get_masks(line, WHITE_THRESH, GRAY_TOL)
 
     sd.heatmap_black += mask_gray
     sd.heatmap_color += mask_color
@@ -349,7 +349,6 @@ def update_segment_data(sd: SegmentData, state: int, line: np.ndarray, feat: Lin
 def segment_document(
     image: np.ndarray,
     line_feature_func: Callable[[np.ndarray], LineFeatures],
-# ) -> List[Tuple[int, int, str]]:
 ):
     empty_line = np.zeros_like(image[0:1]).reshape(-1, image[0:1].shape[-1]).min(axis=-1)
     def empty_segment_data():
@@ -372,7 +371,6 @@ def segment_document(
         sd.heatmap_black = empty_line
         sd.heatmap_color = empty_line
 
-    # results: List[Tuple[int, int, str]] = []
     results = np.array([])
     height = image.shape[0]
     prev_state = State.BACKGROUND
@@ -387,7 +385,6 @@ def segment_document(
         if bg_started or bg_finished:
             class_name = classify_segment(prev_state, sd)
             result = (sd.start, sd.end, class_name)
-            # results.append(result)
             results = np.append(results, result)
             reset_segment_data(sd)
 
@@ -395,11 +392,31 @@ def segment_document(
         prev_state = state
     class_name = classify_segment(prev_state, sd)
     result = (sd.start, sd.end, class_name)
-    # results.append(result)
     results = np.append(results, result)
 
-    # return results
+    return results.reshape(-1, 3)
+
+def segment_document_raw(
+    image: np.ndarray,
+    line_feature_func: Callable[[np.ndarray], LineFeatures],
+):
+    results = np.array([])
+    height = image.shape[0]
+    for y in range(1, height):
+        line = image[y:y+1]
+        feat = line_feature_func(line)
+        state = classify_line(feat)
+        result = (y, y+1, StateNames[state])
+        results = np.append(results, result)
+    result = (height-1, height,
+              StateNames[classify_line(line_feature_func(image[height-1:height]))])
+    results = np.append(results, result)
+
     return results.reshape(-1, 3)
 
 def segdoc(image):
-    return segment_document(image, extract_line_features)
+    # return segment_document(image, lambda sl:
+    return segment_document_raw(image, lambda sl:
+                            extract_line_features(
+                                sl, 0, None, WHITE_THRESH, GRAY_TOL
+                            ))
