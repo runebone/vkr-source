@@ -8,13 +8,13 @@ class State:
     LONG_BLACK_LINE   = 6
 
 StateNames = {
-    State.UNDEFINED:         "Undefined",
-    State.BACKGROUND:        "Background",
-    State.FEW_TEXT:          "Few Text",
-    State.MANY_TEXT:         "Many Text",
-    State.COLOR:             "Color",
-    State.MEDIUM_BLACK_LINE: "Medium Black Line",
-    State.LONG_BLACK_LINE:   "Long Black Line",
+    State.UNDEFINED:         "[S] Undefined",
+    State.BACKGROUND:        "[S] Background",
+    State.FEW_TEXT:          "[S] Few Text",
+    State.MANY_TEXT:         "[S] Many Text",
+    State.COLOR:             "[S] Color",
+    State.MEDIUM_BLACK_LINE: "[S] Medium Black Line",
+    State.LONG_BLACK_LINE:   "[S] Long Black Line",
 }
 
 class Class:
@@ -26,7 +26,7 @@ class Class:
     DIAGRAM    = 5
     FIGURE     = 6
     PLOT       = 7
-    EQUATION   = 8
+    # EQUATION   = 8
 
 ClassNames = {
     Class.UNDEFINED:  "Undefined",
@@ -37,5 +37,5 @@ ClassNames = {
     Class.DIAGRAM:    "Diagram",
     Class.FIGURE:     "Figure",
     Class.PLOT:       "Plot",
-    Class.EQUATION:   "Equation",
+    # Class.EQUATION:   "Equation",
 }
