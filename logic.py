@@ -363,9 +363,13 @@ def handle_medium_black_line(sd: SegmentData):
         height = sd.end - sd.start
         not_very_high = height < 100 # XXX: Hardcode in pixels, too bad; depends on initial scale
         has_a_few_mbls = sd.count_single_medium_black_line < 4
+        has_single_mbl = sd.count_single_medium_black_line == 1
         return (
-            not_very_high and
-            has_a_few_mbls
+            (
+                not_very_high and
+                has_a_few_mbls
+            ) or
+            has_single_mbl
         )
 
     if figure(sd):
