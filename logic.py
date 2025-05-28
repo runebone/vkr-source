@@ -314,13 +314,13 @@ def classify_segment(state: int, sd: SegmentData):
 
     return handler(sd)
 
-def update_segment_data(sd: SegmentData, state: int, line: np.ndarray, feat: LineFeatures):
+def update_segment_data(sd: SegmentData, prev_state, state: int, line: np.ndarray, feat: LineFeatures):
     sd.end += 1
 
-    if state == State.LONG_BLACK_LINE:
-        sd.count_long_black_line += 1
-    # elif state == State.MEDIUM_BLACK_LINE:
-    #     sd.count_medium_black_line += 1
+    if prev_state != state and state == State.LONG_BLACK_LINE:
+        sd.count_long_black_line += 1 # NOTE: Count same LBL only once
+    elif prev_state != state and state == State.MEDIUM_BLACK_LINE:
+        sd.count_medium_black_line -= 1 # NOTE: Don't account for same MBL; Counter will be inc-d later
     elif state == State.MANY_TEXT:
         sd.count_many_text += 1
     elif state == State.COLOR:
@@ -388,7 +388,7 @@ def segment_document(
             results = np.append(results, result)
             reset_segment_data(sd)
 
-        update_segment_data(sd, state, line, feat)
+        update_segment_data(sd, prev_state, state, line, feat)
         prev_state = state
     class_name = classify_segment(prev_state, sd)
     result = (sd.start, sd.end, class_name)
