@@ -26,6 +26,7 @@ class Class:
     DIAGRAM    = 5
     FIGURE     = 6
     PLOT       = 7
+    EQUATION   = 8
 
 ClassNames = {
     Class.UNDEFINED:  "Undefined",
@@ -36,4 +37,5 @@ ClassNames = {
     Class.DIAGRAM:    "Diagram",
     Class.FIGURE:     "Figure",
     Class.PLOT:       "Plot",
+    Class.EQUATION:   "Equation",
 }
