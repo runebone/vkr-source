@@ -182,7 +182,7 @@ def get_min_long_black_line_length(features):
 
 def get_min_medium_black_line_length(features):
     length = features.count_white + features.count_gray + features.count_color
-    return length / 20 # XXX: magic
+    return length / 16 # XXX: magic
 
 def classify_line(feat: LineFeatures):
     cond_background = (
