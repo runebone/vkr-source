@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image
 
 from logic import extract_line_features, classify_line_str, segdoc
-from states import State, StateNames
+from states import State, StateNames, Class, ClassNames
 
 import time
 
@@ -55,6 +55,16 @@ def color_segments_pil(image: Image.Image, segments: np.ndarray) -> Image.Image:
         StateNames[State.COLOR]: (0, 255, 255),
         StateNames[State.MEDIUM_BLACK_LINE]: (255, 0, 0),
         StateNames[State.LONG_BLACK_LINE]: (0, 0, 255),
+
+        ClassNames[Class.BACKGROUND]: (255, 255, 255),
+        ClassNames[Class.UNDEFINED]: (255, 255, 0),
+        ClassNames[Class.TEXT]: (255, 0, 255),
+        ClassNames[Class.TABLE]: (0, 0, 255),
+        ClassNames[Class.CODE]: (128, 0, 255),
+        ClassNames[Class.DIAGRAM]: (255, 0, 0),
+        ClassNames[Class.FIGURE]: (0, 255, 255),
+        ClassNames[Class.PLOT]: (0, 255, 128),
+        # ClassNames[Class.EQUATION]: (255, 128, 0),
     }
 
     # Полупрозрачное наложение (альфа смешивание)
@@ -65,7 +75,7 @@ def color_segments_pil(image: Image.Image, segments: np.ndarray) -> Image.Image:
         y_end = int(row[1]) + 1
         class_name = row[2]
 
-        color = np.array(color_map.get(class_name, (0, 255, 0)))
+        color = np.array(color_map.get(class_name, (0, 0, 0)))
 
         # Получаем нужную часть и смешиваем с цветом
         segment_slice = np_image[y_start:y_end]
