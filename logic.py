@@ -284,14 +284,15 @@ def handle_undefined(sd: SegmentData):
     def text(sd: SegmentData):
         height = sd.end - sd.start
         not_very_high = height < 50 # XXX: Hardcode in pixels, too bad; depends on initial scale
-        had_few_text = sd.count_few_text > 0
+        # had_few_text = sd.count_few_text > 0
         had_a_lot_of_few_text = (sd.count_few_text / height) > 0.4
         print(sd.count_few_text / height)
         return (
-            (
-                not_very_high and
-                had_few_text
-            ) or
+            # (
+            #     not_very_high and
+            #     had_few_text
+            # ) or
+            not_very_high or
             had_a_lot_of_few_text
         )
 
@@ -351,12 +352,9 @@ def handle_color(sd: SegmentData):
 
 def handle_medium_black_line(sd: SegmentData):
     def text(sd: SegmentData):
-        has_single_mbl = sd.count_single_medium_black_line == 1
-        had_a_lot_of_text = sd.count_many_text > 0
-        return (
-            has_single_mbl and
-            had_a_lot_of_text
-        )
+        height = sd.end - sd.start
+        had_a_lot_of_a_lot_of_text = (sd.count_many_text / height) > 0.4
+        return had_a_lot_of_a_lot_of_text
 
     def figure(sd: SegmentData):
         height = sd.end - sd.start
@@ -384,6 +382,12 @@ def handle_medium_black_line(sd: SegmentData):
             ) or
             has_single_mbl
         )
+
+    def diagram(sd: SegmentData):
+        return sd.count_single_medium_black_line > 1
+
+    if diagram(sd):
+        return ClassNames[Class.DIAGRAM]
 
     if text(sd):
         return ClassNames[Class.TEXT]
@@ -459,7 +463,10 @@ def classify_segment(state: int, sd: SegmentData):
     # return StateNames[state]
     return handler(sd)
 
-def update_segment_data(sd: SegmentData, prev_state, state: int, line: np.ndarray, feat: LineFeatures):
+def update_segment_data(sd: SegmentData, prev_feat, feat: LineFeatures, line: np.ndarray):
+    prev_state = classify_line(prev_feat)
+    state = classify_line(feat)
+
     sd.end += 1
 
     if prev_state != state and state == State.LONG_BLACK_LINE:
@@ -528,6 +535,7 @@ def segment_document(
     results = np.array([])
     height = image.shape[0]
     prev_state = State.BACKGROUND
+    prev_feat = line_feature_func(image[0:1])
     sd = empty_segment_data()
     for y in range(1, height):
         line = image[y:y+1]
@@ -542,8 +550,9 @@ def segment_document(
             results = np.append(results, result)
             reset_segment_data(sd)
 
-        update_segment_data(sd, prev_state, state, line, feat)
+        update_segment_data(sd, prev_feat, feat, line)
         prev_state = state
+        prev_feat = feat
     class_name = classify_segment(prev_state, sd)
     result = (sd.start, sd.end, class_name)
     results = np.append(results, result)
