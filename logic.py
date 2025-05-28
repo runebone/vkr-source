@@ -278,6 +278,42 @@ def update_state(state: int, feat: LineFeatures):
     return FSM[state][inferred_state]
 
 def handle_undefined(sd: SegmentData):
+    def text(sd: SegmentData):
+        height = sd.end - sd.start
+        not_very_high = height < 50 # XXX: Hardcode in pixels, too bad; depends on initial scale
+        had_few_text = sd.count_few_text > 0
+        return (
+            not_very_high and
+            had_few_text
+        )
+
+    def code(sd: SegmentData):
+        height = sd.end - sd.start
+        n_vertical_black_lines = np.sum(sd.heatmap_black == height)
+        return n_vertical_black_lines == 2
+
+    def figure(sd: SegmentData):
+        height = sd.end - sd.start
+        pretty_high = height > 200 # XXX: HARDCODE; dependson init scale
+        return pretty_high
+
+    def plot(sd: SegmentData):
+        height = sd.end - sd.start
+        n_vertical_black_lines = np.sum(sd.heatmap_black == height)
+        return n_vertical_black_lines == 1
+
+    if text(sd):
+        return ClassNames[Class.TEXT]
+
+    if code(sd):
+        return ClassNames[Class.CODE]
+
+    if figure(sd):
+        return ClassNames[Class.FIGURE]
+
+    if plot(sd):
+        return ClassNames[Class.PLOT]
+
     return ClassNames[Class.UNDEFINED]
 
 def handle_background(sd: SegmentData):
