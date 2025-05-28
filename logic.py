@@ -278,25 +278,25 @@ def update_state(state: int, feat: LineFeatures):
     return FSM[state][inferred_state]
 
 def handle_undefined(sd: SegmentData):
-    return StateNames[State.UNDEFINED] # TODO:
+    return ClassNames[Class.UNDEFINED]
 
 def handle_background(sd: SegmentData):
-    return ClassNames[Class.BACKGROUND] # TODO:
+    return ClassNames[Class.BACKGROUND]
 
 def handle_few_text(sd: SegmentData):
-    return StateNames[State.FEW_TEXT] # TODO:
+    return ClassNames[Class.TEXT]
 
 def handle_many_text(sd: SegmentData):
-    return StateNames[State.MANY_TEXT] # TODO:
+    return ClassNames[Class.TEXT]
 
 def handle_color(sd: SegmentData):
-    return StateNames[State.COLOR] # TODO:
+    return ClassNames[Class.FIGURE]
 
 def handle_medium_black_line(sd: SegmentData):
-    return StateNames[State.MEDIUM_BLACK_LINE] # TODO:
+    return ClassNames[Class.DIAGRAM]
 
 def handle_long_black_line(sd: SegmentData):
-    return StateNames[State.LONG_BLACK_LINE] # TODO:
+    return ClassNames[Class.FIGURE]
 
 def classify_segment(state: int, sd: SegmentData):
     handlers = {
