@@ -285,9 +285,14 @@ def handle_undefined(sd: SegmentData):
         height = sd.end - sd.start
         not_very_high = height < 50 # XXX: Hardcode in pixels, too bad; depends on initial scale
         had_few_text = sd.count_few_text > 0
+        had_a_lot_of_few_text = (sd.count_few_text / height) > 0.4
+        print(sd.count_few_text / height)
         return (
-            not_very_high and
-            had_few_text
+            (
+                not_very_high and
+                had_few_text
+            ) or
+            had_a_lot_of_few_text
         )
 
     def code(sd: SegmentData):
@@ -345,6 +350,14 @@ def handle_color(sd: SegmentData):
     return ClassNames[Class.FIGURE]
 
 def handle_medium_black_line(sd: SegmentData):
+    def text(sd: SegmentData):
+        has_single_mbl = sd.count_single_medium_black_line == 1
+        had_a_lot_of_text = sd.count_many_text > 0
+        return (
+            has_single_mbl and
+            had_a_lot_of_text
+        )
+
     def figure(sd: SegmentData):
         height = sd.end - sd.start
         has_a_lot_of_mbls = (sd.count_medium_black_line / height) > 0.05
@@ -372,6 +385,9 @@ def handle_medium_black_line(sd: SegmentData):
             has_single_mbl
         )
 
+    if text(sd):
+        return ClassNames[Class.TEXT]
+
     if figure(sd):
         return ClassNames[Class.FIGURE]
 
@@ -379,7 +395,8 @@ def handle_medium_black_line(sd: SegmentData):
         return ClassNames[Class.PLOT]
 
     if equation(sd):
-        return ClassNames[Class.EQUATION]
+        # return ClassNames[Class.EQUATION]
+        return ClassNames[Class.UNDEFINED]
 
     return ClassNames[Class.DIAGRAM]
 
@@ -439,6 +456,7 @@ def classify_segment(state: int, sd: SegmentData):
     handler = handlers.get(state)
     assert handler is not None
 
+    # return StateNames[state]
     return handler(sd)
 
 def update_segment_data(sd: SegmentData, prev_state, state: int, line: np.ndarray, feat: LineFeatures):
@@ -551,8 +569,8 @@ def segment_document_raw(
     return results.reshape(-1, 3)
 
 def segdoc(image):
-    # return segment_document(image, lambda sl:
-    return segment_document_raw(image, lambda sl:
+    return segment_document(image, lambda sl:
+    # return segment_document_raw(image, lambda sl:
                             extract_line_features(
                                 sl, 0, None, WHITE_THRESH, GRAY_TOL
                             ))
