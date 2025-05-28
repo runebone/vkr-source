@@ -23,8 +23,11 @@ class LineFeatures:
 class SegmentData:
     start: int
     end: int
+    count_single_long_black_line: int
+    count_single_medium_black_line: int
     count_long_black_line: int
     count_medium_black_line: int
+    count_total_medium_black_line: int
     count_many_text: int
     count_color: int
     count_few_text: int
@@ -326,9 +329,54 @@ def handle_many_text(sd: SegmentData):
     return ClassNames[Class.TEXT]
 
 def handle_color(sd: SegmentData):
+    def plot(sd: SegmentData):
+        height = sd.end - sd.start
+        n_vertical_black_lines = np.sum(sd.heatmap_black == height)
+        has_single_vertical_axis = n_vertical_black_lines == 1
+        has_pretty_small_color_to_white_relation = (sd.count_color_px / sd.count_white_px) < 0.5
+        return (
+            has_single_vertical_axis and
+            has_pretty_small_color_to_white_relation
+        )
+
+    if plot(sd):
+        return ClassNames[Class.PLOT]
+    
     return ClassNames[Class.FIGURE]
 
 def handle_medium_black_line(sd: SegmentData):
+    def figure(sd: SegmentData):
+        height = sd.end - sd.start
+        has_a_lot_of_mbls = (sd.count_medium_black_line / height) > 0.05
+        return has_a_lot_of_mbls
+
+    def plot(sd: SegmentData):
+        height = sd.end - sd.start
+        has_a_lot_of_color = (sd.count_color / height) > 0.7
+        has_a_few_mbls = (sd.count_medium_black_line / height) < 0.02
+        return (
+            has_a_lot_of_color and
+            has_a_few_mbls
+        )
+
+    def equation(sd: SegmentData):
+        height = sd.end - sd.start
+        not_very_high = height < 100 # XXX: Hardcode in pixels, too bad; depends on initial scale
+        has_a_few_mbls = sd.count_single_medium_black_line < 4
+        return (
+            not_very_high and
+            has_a_few_mbls
+        )
+
+    if figure(sd):
+        return ClassNames[Class.FIGURE]
+
+    if plot(sd):
+        return ClassNames[Class.PLOT]
+
+    if equation(sd):
+        return ClassNames[Class.EQUATION]
+
     return ClassNames[Class.DIAGRAM]
 
 def handle_long_black_line(sd: SegmentData):
@@ -354,9 +402,13 @@ def update_segment_data(sd: SegmentData, prev_state, state: int, line: np.ndarra
     sd.end += 1
 
     if prev_state != state and state == State.LONG_BLACK_LINE:
-        sd.count_long_black_line += 1 # NOTE: Count same LBL only once
+        sd.count_single_long_black_line += 1
+    elif state == State.LONG_BLACK_LINE:
+        sd.count_long_black_line += 1
     elif prev_state != state and state == State.MEDIUM_BLACK_LINE:
-        sd.count_medium_black_line -= 1 # NOTE: Don't account for same MBL; Counter will be inc-d later
+        sd.count_single_medium_black_line += 1
+    elif state == State.MEDIUM_BLACK_LINE:
+        sd.count_medium_black_line += 1
     elif state == State.MANY_TEXT:
         sd.count_many_text += 1
     elif state == State.COLOR:
@@ -373,9 +425,11 @@ def update_segment_data(sd: SegmentData, prev_state, state: int, line: np.ndarra
     sd.count_gray_px += feat.count_gray
 
     min_medium_black_line_length = get_min_medium_black_line_length(feat)
-    count_medium_black_lines = sum(np.array(feat.gray_comp_lengths) >
+
+    # NOTE: Account for several MBLs on single line
+    count_total_medium_black_lines = sum(np.array(feat.gray_comp_lengths) >
                                    min_medium_black_line_length)
-    sd.count_medium_black_line += count_medium_black_lines
+    sd.count_total_medium_black_line += count_total_medium_black_lines
 
     (_, _, mask_color, mask_gray) = get_masks(line, WHITE_THRESH, GRAY_TOL)
 
@@ -389,14 +443,17 @@ def segment_document(
     empty_line = np.zeros_like(image[0:1]).reshape(-1, image[0:1].shape[-1]).min(axis=-1)
     def empty_segment_data():
         return SegmentData(
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             empty_line, empty_line
         )
 
     def reset_segment_data(sd: SegmentData):
         sd.start = sd.end
+        sd.count_single_long_black_line = 0
+        sd.count_single_medium_black_line = 0
         sd.count_long_black_line = 0
         sd.count_medium_black_line = 0
+        sd.count_total_medium_black_line = 0
         sd.count_many_text = 0
         sd.count_color = 0
         sd.count_few_text = 0
