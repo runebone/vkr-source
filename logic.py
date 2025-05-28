@@ -384,6 +384,45 @@ def handle_medium_black_line(sd: SegmentData):
     return ClassNames[Class.DIAGRAM]
 
 def handle_long_black_line(sd: SegmentData):
+    def table(sd: SegmentData):
+        height = sd.end - sd.start
+        n_vertical_black_lines = np.sum(sd.heatmap_black == height)
+        has_more_than_two_vertical_lines = n_vertical_black_lines > 2
+        return has_more_than_two_vertical_lines
+
+    def code(sd: SegmentData):
+        height = sd.end - sd.start
+        n_vertical_black_lines = np.sum(sd.heatmap_black == height)
+        has_two_vertical_lines = n_vertical_black_lines == 2
+        has_no_mbls = sd.count_single_medium_black_line == 0
+        had_many_text = sd.count_many_text > 0
+        has_no_color = sd.count_color == 0
+        return (
+            has_two_vertical_lines and
+            has_no_mbls and
+            (
+                had_many_text or
+                has_no_color
+            )
+        )
+
+    def diagram(sd: SegmentData):
+        has_no_color = sd.count_color == 0
+        has_a_few_mbls = sd.count_single_medium_black_line >= 2
+        return (
+            has_no_color and
+            has_a_few_mbls
+        )
+
+    if table(sd):
+        return ClassNames[Class.TABLE]
+
+    if code(sd):
+        return ClassNames[Class.CODE]
+
+    if diagram(sd):
+        return ClassNames[Class.DIAGRAM]
+
     return ClassNames[Class.FIGURE]
 
 def classify_segment(state: int, sd: SegmentData):
