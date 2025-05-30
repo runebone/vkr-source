@@ -699,7 +699,8 @@ def segment_document(
         sd.heatmap_black = np.zeros_like(empty_line)
         sd.heatmap_color = np.zeros_like(empty_line)
 
-    results = np.array([])
+    # results = np.array([], dtype=object)
+    results = []
     height = image.shape[0]
     prev_state = State.BACKGROUND
     prev_feat = line_feature_func(image[0:1])
@@ -714,7 +715,8 @@ def segment_document(
         if bg_started or bg_finished:
             class_name = classify_segment(prev_state, sd, raw)
             result = (sd.start, sd.end, class_name)
-            results = np.append(results, result)
+            # results = np.append(results, result)
+            results.append(result)
             reset_segment_data(sd)
 
         update_segment_data(sd, prev_feat, feat, line)
@@ -722,41 +724,184 @@ def segment_document(
         prev_feat = feat
     class_name = classify_segment(prev_state, sd, raw)
     result = (sd.start, sd.end, class_name)
-    results = np.append(results, result)
+    # results = np.append(results, result)
+    results.append(result)
 
-    return results.reshape(-1, 3)
+    # return results.reshape(-1, 3)
+    return results
+
+def merge(markup: List[Tuple[int, int, str]]):
+    def merge_segments(arr):
+        merged = []
+        (current_start, current_end, current_class) = arr[0]
+        for i in range(1, len(arr)):
+            start, end, cls = arr[i]
+            if current_class == cls and current_end == start:
+                current_end = end
+            else:
+                merged.append([current_start, current_end, current_class])
+                current_start, current_end, current_class = start, end, cls
+        merged.append([current_start, current_end, current_class])
+        return merged
+
+    tmp_markup = [markup[0]]
+    new_markup = [markup[0]]
+    prev_start = curr_start = next_start = prev_end = curr_end = next_end = 0
+    prev_height = curr_height = next_height = 0
+    prev_class = curr_class = next_class = "None"
+    
+    # Merge small Background segment with nearest larger segment
+    for i in range(1, len(markup) - 1):
+        (prev_start, prev_end, prev_class) = markup[i-1]
+        (curr_start, curr_end, curr_class) = markup[i]
+        (next_start, next_end, next_class) = markup[i+1]
+
+        prev_height = prev_end - prev_start
+        curr_height = curr_end - curr_start
+        next_height = next_end - next_start
+
+        if curr_class == ClassNames[Class.BACKGROUND] and curr_height < 30:
+            if prev_height > curr_height:
+                curr_class = prev_class
+            elif next_height > curr_height:
+                curr_class = next_class
+
+        segment = (curr_start, curr_end, curr_class)
+        tmp_markup.append(segment)
+
+    segment = (next_start, next_end, next_class)
+    tmp_markup.append(segment)
+
+    new_markup = merge_segments(tmp_markup)
+    tmp_markup = [new_markup[0]]
+
+    # Remove background between same-class segments
+    for i in range(1, len(new_markup) - 1):
+        (prev_start, prev_end, prev_class) = new_markup[i-1]
+        (curr_start, curr_end, curr_class) = new_markup[i]
+        (next_start, next_end, next_class) = new_markup[i+1]
+
+        prev_height = prev_end - prev_start
+        curr_height = curr_end - curr_start
+        next_height = next_end - next_start
+
+        if (
+            prev_class == next_class and
+            curr_class == ClassNames[Class.BACKGROUND]
+        ):
+            curr_class = next_class
+
+        segment = (curr_start, curr_end, curr_class)
+        tmp_markup.append(segment)
+
+    segment = (next_start, next_end, next_class)
+    tmp_markup.append(segment)
+
+    new_markup = merge_segments(tmp_markup)
+    tmp_markup = [new_markup[0]]
+
+    # Make small backgrounds uncertain
+    for i in range(len(new_markup)):
+        (curr_start, curr_end, curr_class) = new_markup[i]
+        curr_height = curr_end - curr_start
+
+        if curr_class == ClassNames[Class.BACKGROUND] and curr_height < 200:
+            curr_class = ClassNames[Class.UNDEFINED]
+
+        segment = (curr_start, curr_end, curr_class)
+        tmp_markup.append(segment)
+
+    new_markup = merge_segments(tmp_markup)
+    tmp_markup = [new_markup[0]]
+
+    # Merge uncertainty with greatest neighbor
+    for i in range(1, len(new_markup) - 1):
+        (prev_start, prev_end, prev_class) = new_markup[i-1]
+        (curr_start, curr_end, curr_class) = new_markup[i]
+        (next_start, next_end, next_class) = new_markup[i+1]
+
+        prev_height = prev_end - prev_start
+        curr_height = curr_end - curr_start
+        next_height = next_end - next_start
+
+        if curr_class == ClassNames[Class.UNDEFINED]:
+            if prev_class != ClassNames[Class.BACKGROUND] and prev_height > curr_height:
+                curr_class = prev_class
+            elif next_class != ClassNames[Class.BACKGROUND] and next_height > curr_height:
+                curr_class = next_class
+
+        segment = (curr_start, curr_end, curr_class)
+        tmp_markup.append(segment)
+
+    if next_class == ClassNames[Class.UNDEFINED]:
+        next_class = curr_class
+
+    segment = (next_start, next_end, next_class)
+    tmp_markup.append(segment)
+
+    tmp_markup = tmp_markup[1:]
+    second_class = tmp_markup[1][2]
+    first_start = tmp_markup[0][0]
+    first_end = tmp_markup[0][1]
+    tmp_markup[0] = [first_start, first_end, second_class]
+
+    new_markup = merge_segments(tmp_markup)
+
+    print(new_markup)
+
+    return new_markup
 
 def segment_document_raw(
     image: np.ndarray,
     line_feature_func: Callable[[np.ndarray], LineFeatures],
 ):
-    results = np.array([])
+    # results = np.array([], dtype=object)
+    results = []
     height = image.shape[0]
     for y in range(1, height):
         line = image[y:y+1]
         feat = line_feature_func(line)
         state = classify_line(feat)
         result = (y, y+1, StateNames[state])
-        results = np.append(results, result)
+        # results = np.append(results, result)
+        results.append(result)
     result = (height-1, height,
               StateNames[classify_line(line_feature_func(image[height-1:height]))])
-    results = np.append(results, result)
+    # results = np.append(results, result)
+    results.append(result)
 
-    return results.reshape(-1, 3)
+    # return results.reshape(-1, 3)
+    return results
 
 def segdoc(image, v):
     if v == 0:
-        return segment_document_raw(image, lambda sl:
+        markup = segment_document_raw(image, lambda sl:
                                 extract_line_features(
                                     sl, 0, None, WHITE_THRESH, GRAY_TOL
                                 ))
+        return markup
+        # return np.array(markup).reshape(-1, 3)
+
     if v == 1:
-        return segment_document(image, lambda sl:
+        markup = segment_document(image, lambda sl:
                                 extract_line_features(
                                     sl, 0, None, WHITE_THRESH, GRAY_TOL
                                 ), True)
+        return markup
+        # return np.array(markup).reshape(-1, 3)
 
-    return segment_document(image, lambda sl:
-                            extract_line_features(
-                                sl, 0, None, WHITE_THRESH, GRAY_TOL
-                            ), False)
+    if v == 2:
+        markup =  segment_document(image, lambda sl:
+                                extract_line_features(
+                                    sl, 0, None, WHITE_THRESH, GRAY_TOL
+                                ), False)
+        return markup
+        # return np.array(markup).reshape(-1, 3)
+
+    if v == 3:
+        markup =  segment_document(image, lambda sl:
+                                extract_line_features(
+                                    sl, 0, None, WHITE_THRESH, GRAY_TOL
+                                ), False)
+        return merge(markup)
+        # return np.array(merge(markup).reshape(-1, 3)
