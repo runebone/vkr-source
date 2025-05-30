@@ -7,8 +7,11 @@ from fsm import FSM
 
 GRAY_TOL = 10
 WHITE_THRESH = 200
+HUGE_GAP_ZSCORE = 6
 MAX_MBLS_TO_BE_CONSIDERED_FEW = 4
 MAX_UNDEFINED_HEIGHT_TO_BE_MERGED = 300
+MIN_LONG_LINE_TO_DOC_LENGTH_RATIO = 1.0 / 2
+MIN_MEDIUM_LINE_TO_DOC_LENGTH_RATIO = 1.0 / 16
 MAX_MBLS_RATIO_TO_BE_CONSIDERED_FEW = 0.1
 PLOT_VERTICAL_LINE_HEIGHT_CORRECTION = 0.98
 MIN_FIGURE_HEIGHT_TO_BE_CONSIDERED_HIGH = 200
@@ -18,10 +21,13 @@ MAX_BACKGROUND_HEIGHT_TO_BECOME_UNDEFINED = 200
 MIN_FEW_TEXT_RATIO_TO_BE_CONSIDERED_A_LOT = 0.4
 MIN_MANY_TEXT_RATIO_TO_BE_CONSIDERED_A_LOT = 0.4
 MIN_UNDEFINED_RATIO_TO_BE_CONSIDERED_A_LOT = 0.7
+MAX_COMPONENT_LENGTH_TO_BE_CONSIDERED_SMALL = 20
 MIN_WHITE_PIXELS_RATIO_TO_BE_CONSIDERED_MANY = 0.5
 MIN_COLOR_TO_WHITE_RATIO_TO_BE_CONSIDERED_SMALL = 0.5
+MIN_NUMBER_OF_COMPONENTS_TO_BE_CONSIDERED_A_LOT = 80
 MAX_SEGMENT_HEIGHT_TO_BE_CONSIDERED_NOT_VERY_HIGH = 50
 MIN_REASONABLY_SMALL_SPACE_BETWEEN_TWO_COLUMNS_IN_TABLE = 50
+MIN_NUMBER_OF_COMPONENTS_TO_BE_CONSIDERED_A_FUCKNIG_LOT = 100
 MAX_SEGMENT_HEIGHT_FOR_A_TEXT_TO_BE_CONSIDERED_NOT_SMALL = 60
 MAX_SEGMENT_HEIGHT_TO_BE_MERGED_WITH_NEAREST_LARGER_SEGMENT = 30
 
@@ -198,11 +204,11 @@ def extract_line_features(
 
 def get_min_long_black_line_length(features):
     length = features.count_white + features.count_gray + features.count_color
-    return length / 2 # XXX: magic
+    return length * MIN_LONG_LINE_TO_DOC_LENGTH_RATIO
 
 def get_min_medium_black_line_length(features):
     length = features.count_white + features.count_gray + features.count_color
-    return length / 16 # XXX: magic
+    return length * MIN_MEDIUM_LINE_TO_DOC_LENGTH_RATIO
 
 def classify_line(feat: LineFeatures):
     cond_background = (
@@ -238,9 +244,9 @@ def classify_line(feat: LineFeatures):
     if cond_medium_black_line:
         return State.MEDIUM_BLACK_LINE
 
-    n = 80 # XXX: magic
+    n = MIN_NUMBER_OF_COMPONENTS_TO_BE_CONSIDERED_A_LOT
     has_a_fucking_lot_of_comps = (
-        len(feat.comp_lengths) > 100 # XXX: magic
+        len(feat.comp_lengths) > MIN_NUMBER_OF_COMPONENTS_TO_BE_CONSIDERED_A_FUCKNIG_LOT
     )
     has_a_lot_of_comps_and_no_color = (
         len(feat.comp_lengths) > n and
@@ -266,15 +272,15 @@ def classify_line(feat: LineFeatures):
     mean_gap = np.mean(feat.gap_lengths)
     std_gap = np.std(feat.gap_lengths)
     z_scores = (np.array(feat.gap_lengths) - mean_gap) / std_gap
-    has_huge_gaps = any(abs(z) > 6 for z in z_scores) # XXX: magic
+    has_huge_gaps = any(abs(z) > HUGE_GAP_ZSCORE for z in z_scores)
     has_a_few_comps = (
         len(feat.comp_lengths) <= n
     )
     comps_are_mostly_small = (
-        mean_comp < 20 # XXX: magic
+        mean_comp < MAX_COMPONENT_LENGTH_TO_BE_CONSIDERED_SMALL
     )
     gaps_are_mostly_small = (
-        mean_gap < 20 # XXX: magic
+        mean_gap < MAX_COMPONENT_LENGTH_TO_BE_CONSIDERED_SMALL
     )
     cond_few_text = (
         has_a_few_comps and
