@@ -593,6 +593,9 @@ def handle_long_black_line(sd: SegmentData):
         smol = height < 20
         return smol
 
+    if undefined(sd):
+        return ClassNames[Class.UNDEFINED]
+
     if plot(sd):
         return ClassNames[Class.PLOT]
 
@@ -604,9 +607,6 @@ def handle_long_black_line(sd: SegmentData):
 
     if diagram(sd):
         return ClassNames[Class.DIAGRAM]
-
-    if undefined(sd):
-        return ClassNames[Class.UNDEFINED]
 
     return ClassNames[Class.FIGURE]
 
@@ -824,7 +824,7 @@ def merge(markup: List[Tuple[int, int, str]]):
         curr_height = curr_end - curr_start
         next_height = next_end - next_start
 
-        if curr_class == ClassNames[Class.UNDEFINED]:
+        if curr_class == ClassNames[Class.UNDEFINED] and curr_height < 300:
             if prev_class != ClassNames[Class.BACKGROUND] and prev_height > curr_height:
                 curr_class = prev_class
             elif next_class != ClassNames[Class.BACKGROUND] and next_height > curr_height:
@@ -833,7 +833,7 @@ def merge(markup: List[Tuple[int, int, str]]):
         segment = (curr_start, curr_end, curr_class)
         tmp_markup.append(segment)
 
-    if next_class == ClassNames[Class.UNDEFINED]:
+    if next_class == ClassNames[Class.UNDEFINED] and next_height < 300:
         next_class = curr_class
 
     segment = (next_start, next_end, next_class)
@@ -844,6 +844,11 @@ def merge(markup: List[Tuple[int, int, str]]):
     first_start = tmp_markup[0][0]
     first_end = tmp_markup[0][1]
     tmp_markup[0] = [first_start, first_end, second_class]
+    if tmp_markup[-1][2] == ClassNames[Class.BACKGROUND]:
+        s = tmp_markup[-1][0]
+        e = tmp_markup[-1][1]
+        c = tmp_markup[-2][2]
+        tmp_markup[-1] = (s, e, c)
 
     new_markup = merge_segments(tmp_markup)
 
