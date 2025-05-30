@@ -3,10 +3,27 @@ from typing import List, Callable, Optional, Tuple
 from dataclasses import dataclass
 
 from states import State, StateNames, Class, ClassNames
-from fsm import FSM, assert_not_forbidden_combo
+from fsm import FSM
 
 WHITE_THRESH = 200
 GRAY_TOL = 10
+MAX_UNDEFINED_HEIGHT_TO_BE_MERGED = 300
+MAX_BACKGROUND_HEIGHT_TO_BECOME_UNDEFINED = 200
+MAX_SEGMENT_HEIGHT_TO_BE_MERGED_WITH_NEAREST_LARGER_SEGMENT = 30
+MAX_SEGMENT_HEIGHT_TO_BE_CONSIDERED_SMALL = 20
+PLOT_VERTICAL_LINE_HEIGHT_CORRECTION = 0.98
+MIN_REASONABLY_SMALL_SPACE_BETWEEN_TWO_COLUMNS_IN_TABLE = 50
+MIN_SEGMENT_HEIGHT_TO_BE_CONSIDERED_HIGH = 100
+MAX_MBLS_TO_BE_CONSIDERED_FEW = 4
+MAX_MBLS_RATIO_TO_BE_CONSIDERED_FEW = 0.1
+MIN_WHITE_PIXELS_RATIO_TO_BE_CONSIDERED_MANY = 0.5
+MAX_SEGMENT_HEIGHT_FOR_A_TEXT_TO_BE_CONSIDERED_NOT_SMALL = 60
+MIN_MANY_TEXT_RATIO_TO_BE_CONSIDERED_A_LOT = 0.4
+MIN_UNDEFINED_RATIO_TO_BE_CONSIDERED_A_LOT = 0.7
+MIN_FEW_TEXT_RATIO_TO_BE_CONSIDERED_A_LOT = 0.4
+MIN_COLOR_TO_WHITE_RATIO_TO_BE_CONSIDERED_SMALL = 0.5
+MIN_FIGURE_HEIGHT_TO_BE_CONSIDERED_HIGH = 200
+MAX_SEGMENT_HEIGHT_TO_BE_CONSIDERED_NOT_VERY_HIGH = 50
 
 @dataclass
 class LineFeatures:
@@ -276,21 +293,14 @@ def classify_line_str(feat: LineFeatures):
 
 def update_state(state: int, feat: LineFeatures):
     inferred_state = classify_line(feat)
-    # assert_not_forbidden_combo(state, inferred_state)
     return FSM[state][inferred_state]
 
 def handle_undefined(sd: SegmentData):
     def text(sd: SegmentData):
         height = sd.end - sd.start
-        not_very_high = height < 50 # XXX: Hardcode in pixels, too bad; depends on initial scale
-        # had_few_text = sd.count_few_text > 0
-        had_a_lot_of_few_text = (sd.count_few_text / height) > 0.4
-        # print(sd.count_few_text / height)
+        not_very_high = height < MAX_SEGMENT_HEIGHT_TO_BE_CONSIDERED_NOT_VERY_HIGH
+        had_a_lot_of_few_text = (sd.count_few_text / height) > MIN_FEW_TEXT_RATIO_TO_BE_CONSIDERED_A_LOT
         return (
-            # (
-            #     not_very_high and
-            #     had_few_text
-            # ) or
             not_very_high or
             had_a_lot_of_few_text
         )
@@ -307,13 +317,13 @@ def handle_undefined(sd: SegmentData):
 
     def figure(sd: SegmentData):
         height = sd.end - sd.start
-        pretty_high = height > 200 # XXX: HARDCODE; dependson init scale
+        pretty_high = height > MIN_FIGURE_HEIGHT_TO_BE_CONSIDERED_HIGH
         return pretty_high
 
     def plot(sd: SegmentData):
         height = sd.end - sd.start
 
-        high_vbls = sd.heatmap_black >= 0.98 * height
+        high_vbls = sd.heatmap_black >= PLOT_VERTICAL_LINE_HEIGHT_CORRECTION * height
         padded = np.concatenate(([False], high_vbls, [False]))
         diff = np.diff(padded.astype(int))
         n_vertical_black_lines = len(np.where(diff == 1)[0])
@@ -353,10 +363,10 @@ def handle_many_text(sd: SegmentData):
 
         min_space_is_reasonably_small = True
         if has_more_than_two_vertical_lines:
-            min_space_is_reasonably_small = min(np.diff(lbl_start_indices)) > 50
+            min_space_is_reasonably_small = min(np.diff(lbl_start_indices)) > MIN_REASONABLY_SMALL_SPACE_BETWEEN_TWO_COLUMNS_IN_TABLE
 
 
-        pretty_high = height > 100 # XXX: HARDCODE; dependson init scale
+        pretty_high = height > MIN_SEGMENT_HEIGHT_TO_BE_CONSIDERED_HIGH
 
         return (
             pretty_high and
@@ -377,7 +387,7 @@ def handle_many_text(sd: SegmentData):
         had_many_text = sd.count_many_text > 0
         has_no_color = sd.count_color == 0
 
-        pretty_high = height > 100 # XXX: HARDCODE; dependson init scale
+        pretty_high = height > MIN_SEGMENT_HEIGHT_TO_BE_CONSIDERED_HIGH
 
         return (
             pretty_high and
@@ -407,7 +417,8 @@ def handle_color(sd: SegmentData):
         n_vertical_black_lines = len(np.where(diff == 1)[0])
 
         has_single_vertical_axis = n_vertical_black_lines == 1
-        has_pretty_small_color_to_white_relation = (sd.count_color_px / sd.count_white_px) < 0.5
+        has_pretty_small_color_to_white_relation = (sd.count_color_px /
+                                                    sd.count_white_px) < MIN_COLOR_TO_WHITE_RATIO_TO_BE_CONSIDERED_SMALL
         return (
             has_single_vertical_axis and
             has_pretty_small_color_to_white_relation
@@ -415,7 +426,7 @@ def handle_color(sd: SegmentData):
 
     def undefined(sd: SegmentData):
         height = sd.end - sd.start
-        smol = height < 20
+        smol = height < MAX_SEGMENT_HEIGHT_TO_BE_CONSIDERED_SMALL
         return smol
 
     if plot(sd):
@@ -429,10 +440,10 @@ def handle_color(sd: SegmentData):
 def handle_medium_black_line(sd: SegmentData):
     def text(sd: SegmentData):
         height = sd.end - sd.start
-        had_a_lot_of_a_lot_of_text = (sd.count_many_text / height) > 0.4
-        pretty_small = height < 60 # XXX: hardcode
-        had_a_lot_of_undefined = (sd.count_undefined / height) > 0.7
-        had_a_lot_of_few_text = (sd.count_undefined / height) > 0.4
+        had_a_lot_of_a_lot_of_text = (sd.count_many_text / height) > MIN_MANY_TEXT_RATIO_TO_BE_CONSIDERED_A_LOT
+        pretty_small = height < MAX_SEGMENT_HEIGHT_FOR_A_TEXT_TO_BE_CONSIDERED_NOT_SMALL
+        had_a_lot_of_undefined = (sd.count_undefined / height) > MIN_UNDEFINED_RATIO_TO_BE_CONSIDERED_A_LOT
+        had_a_lot_of_few_text = (sd.count_few_text / height) > MIN_FEW_TEXT_RATIO_TO_BE_CONSIDERED_A_LOT
         return (
             had_a_lot_of_a_lot_of_text or
             (
@@ -447,8 +458,8 @@ def handle_medium_black_line(sd: SegmentData):
     def figure(sd: SegmentData):
         height = sd.end - sd.start
         has_color = sd.count_color > 0
-        has_a_lot_of_mbls = (sd.count_medium_black_line / height) > 0.1
-        pretty_high = height > 100 # XXX: HARDCODE; dependson init scale
+        has_a_lot_of_mbls = (sd.count_medium_black_line / height) > MAX_MBLS_RATIO_TO_BE_CONSIDERED_FEW
+        pretty_high = height > MIN_SEGMENT_HEIGHT_TO_BE_CONSIDERED_HIGH
         return (
             pretty_high and
             (
@@ -461,15 +472,15 @@ def handle_medium_black_line(sd: SegmentData):
         height = sd.end - sd.start
         # has_a_lot_of_color = (sd.count_color / height) > 0.7
         has_color = sd.count_color > 0
-        has_a_few_mbls = (sd.count_medium_black_line / height) < 0.1
+        has_a_few_mbls = (sd.count_medium_black_line / height) < MAX_MBLS_RATIO_TO_BE_CONSIDERED_FEW
 
-        high_vbls = sd.heatmap_black >= 0.98 * height
+        high_vbls = sd.heatmap_black >= PLOT_VERTICAL_LINE_HEIGHT_CORRECTION * height
         padded = np.concatenate(([False], high_vbls, [False]))
         diff = np.diff(padded.astype(int))
         n_vertical_black_lines = len(np.where(diff == 1)[0])
 
         all_px = sd.count_white_px + sd.count_color_px + sd.count_gray_px
-        has_many_white_pixels = sd.count_white_px / all_px > 0.5
+        has_many_white_pixels = sd.count_white_px / all_px > MIN_WHITE_PIXELS_RATIO_TO_BE_CONSIDERED_MANY
 
         return (
             # has_a_lot_of_color and
@@ -481,8 +492,8 @@ def handle_medium_black_line(sd: SegmentData):
 
     def equation(sd: SegmentData):
         height = sd.end - sd.start
-        not_very_high = height < 100 # XXX: Hardcode in pixels, too bad; depends on initial scale
-        has_a_few_mbls = sd.count_single_medium_black_line < 4
+        not_very_high = height < MIN_SEGMENT_HEIGHT_TO_BE_CONSIDERED_HIGH
+        has_a_few_mbls = sd.count_single_medium_black_line < MAX_MBLS_TO_BE_CONSIDERED_FEW
         has_single_mbl = sd.count_single_medium_black_line == 1
         return (
             (
@@ -497,7 +508,7 @@ def handle_medium_black_line(sd: SegmentData):
 
     def undefined(sd: SegmentData):
         height = sd.end - sd.start
-        smol = height < 20
+        smol = height < MAX_SEGMENT_HEIGHT_TO_BE_CONSIDERED_SMALL
         return smol
 
     if plot(sd):
@@ -534,7 +545,7 @@ def handle_long_black_line(sd: SegmentData):
 
         min_space_is_reasonably_small = True
         if has_more_than_two_vertical_lines:
-            min_space_is_reasonably_small = min(np.diff(lbl_start_indices)) > 50
+            min_space_is_reasonably_small = min(np.diff(lbl_start_indices)) > MIN_REASONABLY_SMALL_SPACE_BETWEEN_TWO_COLUMNS_IN_TABLE
 
         return (
             has_more_than_two_vertical_lines and
@@ -576,7 +587,7 @@ def handle_long_black_line(sd: SegmentData):
         has_color = sd.count_color > 0
         has_a_few_lbls = (sd.count_long_black_line / height) < 0.1
 
-        high_vbls = sd.heatmap_black >= 0.98 * height
+        high_vbls = sd.heatmap_black >= PLOT_VERTICAL_LINE_HEIGHT_CORRECTION * height
         padded = np.concatenate(([False], high_vbls, [False]))
         diff = np.diff(padded.astype(int))
         n_vertical_black_lines = len(np.where(diff == 1)[0])
@@ -590,7 +601,7 @@ def handle_long_black_line(sd: SegmentData):
 
     def undefined(sd: SegmentData):
         height = sd.end - sd.start
-        smol = height < 20
+        smol = height < MAX_SEGMENT_HEIGHT_TO_BE_CONSIDERED_SMALL
         return smol
 
     if undefined(sd):
@@ -782,7 +793,7 @@ def merge(markup: List[Tuple[int, int, str]]):
         curr_height = curr_end - curr_start
         next_height = next_end - next_start
 
-        if curr_class == ClassNames[Class.BACKGROUND] and curr_height < 30:
+        if curr_class == ClassNames[Class.BACKGROUND] and curr_height < MAX_SEGMENT_HEIGHT_TO_BE_MERGED_WITH_NEAREST_LARGER_SEGMENT:
             if prev_height > curr_height:
                 curr_class = prev_class
             elif next_height > curr_height:
@@ -827,7 +838,7 @@ def merge(markup: List[Tuple[int, int, str]]):
         (curr_start, curr_end, curr_class) = new_markup[i]
         curr_height = curr_end - curr_start
 
-        if curr_class == ClassNames[Class.BACKGROUND] and curr_height < 200:
+        if curr_class == ClassNames[Class.BACKGROUND] and curr_height < MAX_BACKGROUND_HEIGHT_TO_BECOME_UNDEFINED:
             curr_class = ClassNames[Class.UNDEFINED]
 
         segment = (curr_start, curr_end, curr_class)
@@ -846,7 +857,7 @@ def merge(markup: List[Tuple[int, int, str]]):
         curr_height = curr_end - curr_start
         next_height = next_end - next_start
 
-        if curr_class == ClassNames[Class.UNDEFINED] and curr_height < 300:
+        if curr_class == ClassNames[Class.UNDEFINED] and curr_height < MAX_UNDEFINED_HEIGHT_TO_BE_MERGED:
             if prev_class != ClassNames[Class.BACKGROUND] and prev_height > curr_height:
                 curr_class = prev_class
             elif next_class != ClassNames[Class.BACKGROUND] and next_height > curr_height:
@@ -855,7 +866,7 @@ def merge(markup: List[Tuple[int, int, str]]):
         segment = (curr_start, curr_end, curr_class)
         tmp_markup.append(segment)
 
-    if next_class == ClassNames[Class.UNDEFINED] and next_height < 300:
+    if next_class == ClassNames[Class.UNDEFINED] and next_height < MAX_UNDEFINED_HEIGHT_TO_BE_MERGED:
         next_class = curr_class
 
     segment = (next_start, next_end, next_class)
