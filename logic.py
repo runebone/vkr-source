@@ -670,6 +670,28 @@ def update_segment_data(sd: SegmentData, prev_feat, feat: LineFeatures, line: np
     sd.heatmap_black += mask_gray.astype(int)
     sd.heatmap_color += mask_color.astype(int)
 
+def segment_document_raw(
+    image: np.ndarray,
+    line_feature_func: Callable[[np.ndarray], LineFeatures],
+):
+    # results = np.array([], dtype=object)
+    results = []
+    height = image.shape[0]
+    for y in range(1, height):
+        line = image[y:y+1]
+        feat = line_feature_func(line)
+        state = classify_line(feat)
+        result = (y, y+1, StateNames[state])
+        # results = np.append(results, result)
+        results.append(result)
+    result = (height-1, height,
+              StateNames[classify_line(line_feature_func(image[height-1:height]))])
+    # results = np.append(results, result)
+    results.append(result)
+
+    # return results.reshape(-1, 3)
+    return results
+
 def segment_document(
     image: np.ndarray,
     line_feature_func: Callable[[np.ndarray], LineFeatures],
@@ -855,28 +877,6 @@ def merge(markup: List[Tuple[int, int, str]]):
     print(new_markup)
 
     return new_markup
-
-def segment_document_raw(
-    image: np.ndarray,
-    line_feature_func: Callable[[np.ndarray], LineFeatures],
-):
-    # results = np.array([], dtype=object)
-    results = []
-    height = image.shape[0]
-    for y in range(1, height):
-        line = image[y:y+1]
-        feat = line_feature_func(line)
-        state = classify_line(feat)
-        result = (y, y+1, StateNames[state])
-        # results = np.append(results, result)
-        results.append(result)
-    result = (height-1, height,
-              StateNames[classify_line(line_feature_func(image[height-1:height]))])
-    # results = np.append(results, result)
-    results.append(result)
-
-    # return results.reshape(-1, 3)
-    return results
 
 def segdoc(image, v):
     if v == 0:
