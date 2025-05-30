@@ -46,24 +46,34 @@ def color_segments_pil(image: Image.Image, segments: np.ndarray) -> Image.Image:
     image = image.convert("RGB")
     np_image = np.array(image)
 
+    WHITE = (255, 255, 255)
+    YELLOW = (255, 255, 0)
+    GREEN = (0, 255, 0)
+    MAGENTA = (255, 0, 255)
+    CYAN = (0, 255, 255)
+    RED = (255, 0, 0)
+    BLUE = (0, 0, 255)
+    PURPLE = (128, 0, 255)
+    GREENISHCYAN = (0, 255, 128)
+
     # Цвета для классов
     color_map = {
-        StateNames[State.BACKGROUND]: (255, 255, 255),
-        StateNames[State.UNDEFINED]: (255, 255, 0),
-        StateNames[State.FEW_TEXT]: (0, 255, 0),
-        StateNames[State.MANY_TEXT]: (255, 0, 255),
-        StateNames[State.COLOR]: (0, 255, 255),
-        StateNames[State.MEDIUM_BLACK_LINE]: (255, 0, 0),
-        StateNames[State.LONG_BLACK_LINE]: (0, 0, 255),
+        StateNames[State.BACKGROUND]: WHITE,
+        StateNames[State.UNDEFINED]: YELLOW,
+        StateNames[State.FEW_TEXT]: GREEN,
+        StateNames[State.MANY_TEXT]: MAGENTA,
+        StateNames[State.COLOR]: CYAN,
+        StateNames[State.MEDIUM_BLACK_LINE]: RED,
+        StateNames[State.LONG_BLACK_LINE]: BLUE,
 
-        ClassNames[Class.BACKGROUND]: (255, 255, 255),
-        ClassNames[Class.UNDEFINED]: (255, 255, 0),
-        ClassNames[Class.TEXT]: (255, 0, 255),
-        ClassNames[Class.TABLE]: (0, 0, 255),
-        ClassNames[Class.CODE]: (128, 0, 255),
-        ClassNames[Class.DIAGRAM]: (255, 0, 0),
-        ClassNames[Class.FIGURE]: (0, 255, 255),
-        ClassNames[Class.PLOT]: (0, 255, 128),
+        ClassNames[Class.BACKGROUND]: WHITE,
+        ClassNames[Class.UNDEFINED]: YELLOW,
+        ClassNames[Class.TEXT]: MAGENTA,
+        ClassNames[Class.TABLE]: BLUE,
+        ClassNames[Class.CODE]: PURPLE,
+        ClassNames[Class.DIAGRAM]: RED,
+        ClassNames[Class.FIGURE]: CYAN,
+        ClassNames[Class.PLOT]: GREENISHCYAN,
         # ClassNames[Class.EQUATION]: (255, 128, 0),
     }
 
@@ -189,7 +199,8 @@ def move_scanline(
 
 def page_change(
     file_obj,
-    page: int
+    page: int,
+    markup_type: int,
 ) -> Tuple[Optional[Image.Image], Optional[np.ndarray], int]:
     if not file_obj:
         return None, None, 0
@@ -200,7 +211,7 @@ def page_change(
     img_arr = np.array(img_pil)
 
     # start = time.perf_counter()
-    data = segdoc(img_arr)
+    data = segdoc(img_arr, markup_type)
     # end = time.perf_counter()
     # print(data)
     # print(end - start)
@@ -210,9 +221,10 @@ def page_change(
 
 def file_upload(
     file_obj,
-    page: int
+    page: int,
+    markup_type: int
 ) -> Tuple[Optional[Image.Image], str, Optional[np.ndarray], Tuple[int, int], str, int]:
-    img_pil, img_arr, total = page_change(file_obj, page)
+    img_pil, img_arr, total = page_change(file_obj, page, markup_type)
     end_page = min(page + Config.AUTOCALC_PAGES, total)
     candidates = compute_margins(file_obj.name, page, end_page)
     auto = max(set(candidates), key=candidates.count)
@@ -269,6 +281,7 @@ def gradio_interface() -> None:
             with gr.Column():
                 file_input = gr.File(label="PDF file", file_types=[".pdf"])
                 page_num = gr.Number(value=1, label="Page number", precision=0)
+                markup_type = gr.Number(value=0, label="Markup type", precision=0)
                 page_info = gr.Textbox(label="Document info")
                 saved_info = gr.Textbox(label="Saved margins")
                 auto_info = gr.Textbox(label="Auto margins")
@@ -278,11 +291,11 @@ def gradio_interface() -> None:
                     btn_prev = gr.Button("Prev")
                     btn_next = gr.Button("Next")
                     btn_last = gr.Button("Last")
-                btn_save = gr.Button("Save margins")
-                btn_reset = gr.Button("Reset margins")
-                step = gr.Number(value=Config.DEFAULT_STEP, label="Step", precision=0)
-                btn_up = gr.Button("Up")
-                btn_down = gr.Button("Down")
+                # btn_save = gr.Button("Save margins")
+                # btn_reset = gr.Button("Reset margins")
+                # step = gr.Number(value=Config.DEFAULT_STEP, label="Step", precision=0)
+                # btn_up = gr.Button("Up")
+                # btn_down = gr.Button("Down")
             with gr.Column():
                 output_image = gr.Image(type="pil", label="Preview")
         with gr.Row():
@@ -290,44 +303,49 @@ def gradio_interface() -> None:
 
         file_input.change(
             fn=file_upload,
-            inputs=[file_input, page_num], # TODO: start with first page, but
+            inputs=[file_input, page_num, markup_type], # TODO: start with first page, but
                                            # it tracks memory change on page_num
             outputs=[output_image, page_info, state_img, state_saved, auto_info, state_total]
         )
         page_num.change(
             fn=page_change,
-            inputs=[file_input, page_num],
+            inputs=[file_input, page_num, markup_type],
+            outputs=[output_image, state_img, state_total]
+        )
+        markup_type.change(
+            fn=page_change,
+            inputs=[file_input, page_num, markup_type],
             outputs=[output_image, state_img, state_total]
         )
         btn_first.click(lambda: 1, [], [page_num])
         btn_prev.click(lambda p: max(p-1,1), [page_num], [page_num])
         btn_next.click(lambda p,t: min(p+1,t), [page_num,state_total], [page_num])
         btn_last.click(lambda t: t, [state_total], [page_num])
-        btn_reset.click(
-            fn=reset_margins,
-            inputs=[file_input, page_num, state_total],
-            outputs=[state_saved, saved_info, auto_info]
-        )
-        btn_save.click(
-            fn=save_page_margins,
-            inputs=[file_input, page_num, state_saved],
-            outputs=[state_saved, saved_info]
-        )
+        # btn_reset.click(
+        #     fn=reset_margins,
+        #     inputs=[file_input, page_num, state_total],
+        #     outputs=[state_saved, saved_info, auto_info]
+        # )
+        # btn_save.click(
+        #     fn=save_page_margins,
+        #     inputs=[file_input, page_num, state_saved],
+        #     outputs=[state_saved, saved_info]
+        # )
         output_image.select(
             fn=extract_scanline,
             inputs=[state_img, state_saved],
             outputs=[scanline_img, output_image, state_y, y_info]
         )
-        btn_up.click(
-            fn=lambda img, y, s, m: move_scanline(img, y, -int(s), m),
-            inputs=[state_img, state_y, step, state_saved],
-            outputs=[scanline_img, output_image, state_y, y_info]
-        )
-        btn_down.click(
-            fn=lambda img, y, s, m: move_scanline(img, y, int(s), m),
-            inputs=[state_img, state_y, step, state_saved],
-            outputs=[scanline_img, output_image, state_y, y_info]
-        )
+        # btn_up.click(
+        #     fn=lambda img, y, s, m: move_scanline(img, y, -int(s), m),
+        #     inputs=[state_img, state_y, step, state_saved],
+        #     outputs=[scanline_img, output_image, state_y, y_info]
+        # )
+        # btn_down.click(
+        #     fn=lambda img, y, s, m: move_scanline(img, y, int(s), m),
+        #     inputs=[state_img, state_y, step, state_saved],
+        #     outputs=[scanline_img, output_image, state_y, y_info]
+        # )
 
         demo.launch()
 

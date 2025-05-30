@@ -250,7 +250,6 @@ def classify_line(feat: LineFeatures):
     std_gap = np.std(feat.gap_lengths)
     z_scores = (np.array(feat.gap_lengths) - mean_gap) / std_gap
     has_huge_gaps = any(abs(z) > 6 for z in z_scores) # XXX: magic
-    # print(f"mean_comp: {mean_comp}, mean_gap: {mean_gap}, z_scores: {z_scores}")
     has_a_few_comps = (
         len(feat.comp_lengths) <= n
     )
@@ -286,7 +285,7 @@ def handle_undefined(sd: SegmentData):
         not_very_high = height < 50 # XXX: Hardcode in pixels, too bad; depends on initial scale
         # had_few_text = sd.count_few_text > 0
         had_a_lot_of_few_text = (sd.count_few_text / height) > 0.4
-        print(sd.count_few_text / height)
+        # print(sd.count_few_text / height)
         return (
             # (
             #     not_very_high and
@@ -298,7 +297,12 @@ def handle_undefined(sd: SegmentData):
 
     def code(sd: SegmentData):
         height = sd.end - sd.start
-        n_vertical_black_lines = np.sum(sd.heatmap_black == height)
+
+        high_vbls = sd.heatmap_black == height
+        padded = np.concatenate(([False], high_vbls, [False]))
+        diff = np.diff(padded.astype(int))
+        n_vertical_black_lines = len(np.where(diff == 1)[0])
+
         return n_vertical_black_lines == 2
 
     def figure(sd: SegmentData):
@@ -308,7 +312,12 @@ def handle_undefined(sd: SegmentData):
 
     def plot(sd: SegmentData):
         height = sd.end - sd.start
-        n_vertical_black_lines = np.sum(sd.heatmap_black == height)
+
+        high_vbls = sd.heatmap_black >= 0.98 * height
+        padded = np.concatenate(([False], high_vbls, [False]))
+        diff = np.diff(padded.astype(int))
+        n_vertical_black_lines = len(np.where(diff == 1)[0])
+
         return n_vertical_black_lines == 1
 
     if text(sd):
@@ -332,12 +341,71 @@ def handle_few_text(sd: SegmentData):
     return ClassNames[Class.TEXT]
 
 def handle_many_text(sd: SegmentData):
+    def table(sd: SegmentData):
+        height = sd.end - sd.start
+
+        high_vbls = sd.heatmap_black == height
+        padded = np.concatenate(([False], high_vbls, [False]))
+        diff = np.diff(padded.astype(int))
+        lbl_start_indices = np.where(diff == 1)[0]
+        n_vertical_black_lines = len(lbl_start_indices)
+        has_more_than_two_vertical_lines = n_vertical_black_lines > 2
+
+        min_space_is_reasonably_small = True
+        if has_more_than_two_vertical_lines:
+            min_space_is_reasonably_small = min(np.diff(lbl_start_indices)) > 50
+
+
+        pretty_high = height > 100 # XXX: HARDCODE; dependson init scale
+
+        return (
+            pretty_high and
+            has_more_than_two_vertical_lines and
+            min_space_is_reasonably_small
+        )
+
+    def code(sd: SegmentData):
+        height = sd.end - sd.start
+
+        high_vbls = sd.heatmap_black == height
+        padded = np.concatenate(([False], high_vbls, [False]))
+        diff = np.diff(padded.astype(int))
+        n_vertical_black_lines = len(np.where(diff == 1)[0])
+
+        has_two_vertical_lines = n_vertical_black_lines == 2
+        has_no_mbls = sd.count_single_medium_black_line == 0
+        had_many_text = sd.count_many_text > 0
+        has_no_color = sd.count_color == 0
+
+        pretty_high = height > 100 # XXX: HARDCODE; dependson init scale
+
+        return (
+            pretty_high and
+            has_two_vertical_lines and
+            has_no_mbls and
+            (
+                had_many_text or
+                has_no_color
+            )
+        )
+
+    if table(sd):
+        return ClassNames[Class.TABLE]
+
+    if code(sd):
+        return ClassNames[Class.CODE]
+
     return ClassNames[Class.TEXT]
 
 def handle_color(sd: SegmentData):
     def plot(sd: SegmentData):
         height = sd.end - sd.start
-        n_vertical_black_lines = np.sum(sd.heatmap_black == height)
+
+        high_vbls = sd.heatmap_black >= 0.98 * height
+        padded = np.concatenate(([False], high_vbls, [False]))
+        diff = np.diff(padded.astype(int))
+        n_vertical_black_lines = len(np.where(diff == 1)[0])
+
         has_single_vertical_axis = n_vertical_black_lines == 1
         has_pretty_small_color_to_white_relation = (sd.count_color_px / sd.count_white_px) < 0.5
         return (
@@ -354,20 +422,53 @@ def handle_medium_black_line(sd: SegmentData):
     def text(sd: SegmentData):
         height = sd.end - sd.start
         had_a_lot_of_a_lot_of_text = (sd.count_many_text / height) > 0.4
-        return had_a_lot_of_a_lot_of_text
+        pretty_small = height < 60 # XXX: hardcode
+        had_a_lot_of_undefined = (sd.count_undefined / height) > 0.7
+        had_a_lot_of_few_text = (sd.count_undefined / height) > 0.4
+        return (
+            had_a_lot_of_a_lot_of_text or
+            (
+                pretty_small and
+                (
+                    had_a_lot_of_undefined or
+                    had_a_lot_of_few_text
+                )
+            )
+        )
 
     def figure(sd: SegmentData):
         height = sd.end - sd.start
-        has_a_lot_of_mbls = (sd.count_medium_black_line / height) > 0.05
-        return has_a_lot_of_mbls
+        has_color = sd.count_color > 0
+        has_a_lot_of_mbls = (sd.count_medium_black_line / height) > 0.1
+        pretty_high = height > 100 # XXX: HARDCODE; dependson init scale
+        return (
+            pretty_high and
+            (
+                has_color or
+                has_a_lot_of_mbls
+            )
+        )
 
     def plot(sd: SegmentData):
         height = sd.end - sd.start
-        has_a_lot_of_color = (sd.count_color / height) > 0.7
-        has_a_few_mbls = (sd.count_medium_black_line / height) < 0.02
+        # has_a_lot_of_color = (sd.count_color / height) > 0.7
+        has_color = sd.count_color > 0
+        has_a_few_mbls = (sd.count_medium_black_line / height) < 0.1
+
+        high_vbls = sd.heatmap_black >= 0.98 * height
+        padded = np.concatenate(([False], high_vbls, [False]))
+        diff = np.diff(padded.astype(int))
+        n_vertical_black_lines = len(np.where(diff == 1)[0])
+
+        all_px = sd.count_white_px + sd.count_color_px + sd.count_gray_px
+        has_many_white_pixels = sd.count_white_px / all_px > 0.5
+
         return (
-            has_a_lot_of_color and
-            has_a_few_mbls
+            # has_a_lot_of_color and
+            has_color and
+            has_a_few_mbls and
+            n_vertical_black_lines >= 2 and
+            has_many_white_pixels
         )
 
     def equation(sd: SegmentData):
@@ -386,17 +487,17 @@ def handle_medium_black_line(sd: SegmentData):
     def diagram(sd: SegmentData):
         return sd.count_single_medium_black_line > 1
 
+    if plot(sd):
+        return ClassNames[Class.PLOT]
+
+    if figure(sd):
+        return ClassNames[Class.FIGURE]
+
     if diagram(sd):
         return ClassNames[Class.DIAGRAM]
 
     if text(sd):
         return ClassNames[Class.TEXT]
-
-    if figure(sd):
-        return ClassNames[Class.FIGURE]
-
-    if plot(sd):
-        return ClassNames[Class.PLOT]
 
     if equation(sd):
         # return ClassNames[Class.EQUATION]
@@ -407,13 +508,31 @@ def handle_medium_black_line(sd: SegmentData):
 def handle_long_black_line(sd: SegmentData):
     def table(sd: SegmentData):
         height = sd.end - sd.start
-        n_vertical_black_lines = np.sum(sd.heatmap_black == height)
+
+        high_vbls = sd.heatmap_black == height
+        padded = np.concatenate(([False], high_vbls, [False]))
+        diff = np.diff(padded.astype(int))
+        lbl_start_indices = np.where(diff == 1)[0]
+        n_vertical_black_lines = len(lbl_start_indices)
         has_more_than_two_vertical_lines = n_vertical_black_lines > 2
-        return has_more_than_two_vertical_lines
+
+        min_space_is_reasonably_small = True
+        if has_more_than_two_vertical_lines:
+            min_space_is_reasonably_small = min(np.diff(lbl_start_indices)) > 50
+
+        return (
+            has_more_than_two_vertical_lines and
+            min_space_is_reasonably_small
+        )
 
     def code(sd: SegmentData):
         height = sd.end - sd.start
-        n_vertical_black_lines = np.sum(sd.heatmap_black == height)
+
+        high_vbls = sd.heatmap_black == height
+        padded = np.concatenate(([False], high_vbls, [False]))
+        diff = np.diff(padded.astype(int))
+        n_vertical_black_lines = len(np.where(diff == 1)[0])
+
         has_two_vertical_lines = n_vertical_black_lines == 2
         has_no_mbls = sd.count_single_medium_black_line == 0
         had_many_text = sd.count_many_text > 0
@@ -435,6 +554,27 @@ def handle_long_black_line(sd: SegmentData):
             has_a_few_mbls
         )
 
+    def plot(sd: SegmentData):
+        height = sd.end - sd.start
+        # has_a_lot_of_color = (sd.count_color / height) > 0.7
+        has_color = sd.count_color > 0
+        has_a_few_lbls = (sd.count_long_black_line / height) < 0.1
+
+        high_vbls = sd.heatmap_black >= 0.98 * height
+        padded = np.concatenate(([False], high_vbls, [False]))
+        diff = np.diff(padded.astype(int))
+        n_vertical_black_lines = len(np.where(diff == 1)[0])
+
+        return (
+            # has_a_lot_of_color and
+            has_color and
+            has_a_few_lbls and
+            n_vertical_black_lines >= 2
+        )
+
+    if plot(sd):
+        return ClassNames[Class.PLOT]
+
     if table(sd):
         return ClassNames[Class.TABLE]
 
@@ -446,7 +586,7 @@ def handle_long_black_line(sd: SegmentData):
 
     return ClassNames[Class.FIGURE]
 
-def classify_segment(state: int, sd: SegmentData):
+def classify_segment(state: int, sd: SegmentData, raw: bool = False):
     handlers = {
         State.UNDEFINED: handle_undefined,
         State.BACKGROUND: handle_background,
@@ -460,7 +600,9 @@ def classify_segment(state: int, sd: SegmentData):
     handler = handlers.get(state)
     assert handler is not None
 
-    # return StateNames[state]
+    if raw:
+        return StateNames[state]
+
     return handler(sd)
 
 def update_segment_data(sd: SegmentData, prev_feat, feat: LineFeatures, line: np.ndarray):
@@ -501,14 +643,15 @@ def update_segment_data(sd: SegmentData, prev_feat, feat: LineFeatures, line: np
 
     (_, _, mask_color, mask_gray) = get_masks(line, WHITE_THRESH, GRAY_TOL)
 
-    sd.heatmap_black += mask_gray
-    sd.heatmap_color += mask_color
+    sd.heatmap_black += mask_gray.astype(int)
+    sd.heatmap_color += mask_color.astype(int)
 
 def segment_document(
     image: np.ndarray,
     line_feature_func: Callable[[np.ndarray], LineFeatures],
+    raw: bool = False,
 ):
-    empty_line = np.zeros_like(image[0:1]).reshape(-1, image[0:1].shape[-1]).min(axis=-1)
+    empty_line = np.zeros_like(image[0:1]).reshape(-1, image[0:1].shape[-1]).min(axis=-1).astype(int)
     def empty_segment_data():
         return SegmentData(
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -529,8 +672,8 @@ def segment_document(
         sd.count_white_px = 0
         sd.count_color_px = 0
         sd.count_gray_px = 0
-        sd.heatmap_black = empty_line
-        sd.heatmap_color = empty_line
+        sd.heatmap_black = np.zeros_like(empty_line)
+        sd.heatmap_color = np.zeros_like(empty_line)
 
     results = np.array([])
     height = image.shape[0]
@@ -545,7 +688,7 @@ def segment_document(
         bg_started = state == State.BACKGROUND and prev_state != State.BACKGROUND
         bg_finished = state != State.BACKGROUND and prev_state == State.BACKGROUND
         if bg_started or bg_finished:
-            class_name = classify_segment(prev_state, sd)
+            class_name = classify_segment(prev_state, sd, raw)
             result = (sd.start, sd.end, class_name)
             results = np.append(results, result)
             reset_segment_data(sd)
@@ -553,7 +696,7 @@ def segment_document(
         update_segment_data(sd, prev_feat, feat, line)
         prev_state = state
         prev_feat = feat
-    class_name = classify_segment(prev_state, sd)
+    class_name = classify_segment(prev_state, sd, raw)
     result = (sd.start, sd.end, class_name)
     results = np.append(results, result)
 
@@ -577,9 +720,19 @@ def segment_document_raw(
 
     return results.reshape(-1, 3)
 
-def segdoc(image):
+def segdoc(image, v):
+    if v == 0:
+        return segment_document_raw(image, lambda sl:
+                                extract_line_features(
+                                    sl, 0, None, WHITE_THRESH, GRAY_TOL
+                                ))
+    if v == 1:
+        return segment_document(image, lambda sl:
+                                extract_line_features(
+                                    sl, 0, None, WHITE_THRESH, GRAY_TOL
+                                ), True)
+
     return segment_document(image, lambda sl:
-    # return segment_document_raw(image, lambda sl:
                             extract_line_features(
                                 sl, 0, None, WHITE_THRESH, GRAY_TOL
-                            ))
+                            ), False)
