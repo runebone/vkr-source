@@ -413,8 +413,16 @@ def handle_color(sd: SegmentData):
             has_pretty_small_color_to_white_relation
         )
 
+    def undefined(sd: SegmentData):
+        height = sd.end - sd.start
+        smol = height < 20
+        return smol
+
     if plot(sd):
         return ClassNames[Class.PLOT]
+
+    if undefined(sd):
+        return ClassNames[Class.UNDEFINED]
     
     return ClassNames[Class.FIGURE]
 
@@ -487,6 +495,11 @@ def handle_medium_black_line(sd: SegmentData):
     def diagram(sd: SegmentData):
         return sd.count_single_medium_black_line > 1
 
+    def undefined(sd: SegmentData):
+        height = sd.end - sd.start
+        smol = height < 20
+        return smol
+
     if plot(sd):
         return ClassNames[Class.PLOT]
 
@@ -501,6 +514,9 @@ def handle_medium_black_line(sd: SegmentData):
 
     if equation(sd):
         # return ClassNames[Class.EQUATION]
+        return ClassNames[Class.UNDEFINED]
+
+    if undefined(sd):
         return ClassNames[Class.UNDEFINED]
 
     return ClassNames[Class.DIAGRAM]
@@ -572,6 +588,11 @@ def handle_long_black_line(sd: SegmentData):
             n_vertical_black_lines >= 2
         )
 
+    def undefined(sd: SegmentData):
+        height = sd.end - sd.start
+        smol = height < 20
+        return smol
+
     if plot(sd):
         return ClassNames[Class.PLOT]
 
@@ -583,6 +604,9 @@ def handle_long_black_line(sd: SegmentData):
 
     if diagram(sd):
         return ClassNames[Class.DIAGRAM]
+
+    if undefined(sd):
+        return ClassNames[Class.UNDEFINED]
 
     return ClassNames[Class.FIGURE]
 
