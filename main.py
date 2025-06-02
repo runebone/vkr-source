@@ -3,6 +3,9 @@ from PIL import Image
 import numpy as np
 import fitz
 from concurrent.futures import ProcessPoolExecutor
+from tqdm import tqdm
+from multiprocessing import Manager
+import threading
 
 from fast import segdoc as sd
 
@@ -14,7 +17,7 @@ def page_to_image(pdf_path: str, page_index: int, scale_factor: float = 3) -> Im
     doc.close()
     return img
 
-def process_pages(pdf_path, page_range, markup_type):
+def process_pages(pdf_path, page_range, markup_type, queue=None):
     """Функция для обработки поддиапазона страниц."""
     partial_results = []
     for i in page_range:
@@ -29,7 +32,8 @@ def process_pages(pdf_path, page_range, markup_type):
                 {"y_start": s[0], "y_end": s[1], "label": s[2]} for s in markup
             ]
         })
-        print(i)
+        if queue:
+            queue.put(1)
     return partial_results
 
 def chunk_indices(total, chunks):
@@ -58,10 +62,27 @@ def main(pdf_path, json_path, markup_type, num_workers=8):
 
     results = []
 
+    manager = Manager()
+    queue = manager.Queue()
+
+    def tqdm_updater():
+        pbar = tqdm(total=total_pages, desc="Pages processed")
+        for _ in range(total_pages):
+            queue.get()
+            pbar.update(1)
+        pbar.close()
+
+    # Запускаем tqdm в отдельном потоке
+    thread = threading.Thread(target=tqdm_updater)
+    thread.start()
+
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        futures = [executor.submit(process_pages, pdf_path, chunk, markup_type) for chunk in chunks]
+        futures = [executor.submit(process_pages, pdf_path, chunk, markup_type,
+                                   queue) for chunk in chunks]
         for future in futures:
             results.extend(future.result())
+
+    thread.join()  # Дождаться завершения прогресс-бара
 
     results.sort(key=lambda x: x["page"])
 

@@ -1,6 +1,7 @@
 import json
 import fitz  # PyMuPDF
 import sys
+from tqdm import tqdm
 
 from states import Class, ClassNames, State, StateNames
 
@@ -35,7 +36,8 @@ def annotate_pdf(pdf_path, json_path, output_path):
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
-    for page_entry in data:
+    # for page_entry in data:
+    for page_entry in tqdm(data, desc="Annotating pages"):
         page_num = page_entry['page'] - 1
         if page_num < 0 or page_num >= len(doc):
             print(f"Warning: page {page_num + 1} out of bounds")
