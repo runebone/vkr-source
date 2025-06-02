@@ -48,19 +48,22 @@ def chunk_indices(total, chunks):
         start = end
     return indices
 
-def main(pdf_path, json_path, markup_type, num_workers=8):
+def main(pdf_path, json_path, markup_type, num_workers=8, page_indices=None):
     # markup_type = 0 -> raw
     # markup_type = 1 -> primary
     # markup_type = 2 -> specified
     # markup_type = 3 -> merged
 
-    doc = fitz.open(pdf_path)
-    total_pages = doc.page_count
-    doc.close()
-
-    chunks = chunk_indices(total_pages, num_workers)
-
     results = []
+
+    if page_indices is None:
+        doc = fitz.open(pdf_path)
+        total_pages = doc.page_count
+        page_indices = list(range(total_pages))
+        doc.close()
+
+    chunks = chunk_indices(len(page_indices), num_workers)
+    pages_chunks = [ [page_indices[i] for i in chunk] for chunk in chunks ]
 
     manager = Manager()
     queue = manager.Queue()
@@ -79,14 +82,14 @@ def main(pdf_path, json_path, markup_type, num_workers=8):
         pbar.close()
 
     # Запускаем tqdm в отдельном потоке
-    pbar = tqdm(total=total_pages, desc="Pages processed")
-    thread = threading.Thread(target=tqdm_updater, args=(pbar, queue, total_pages, stop_signal))
+    pbar = tqdm(total=len(page_indices), desc="Pages processed")
+    thread = threading.Thread(target=tqdm_updater, args=(pbar, queue, len(page_indices), stop_signal))
     thread.start()
 
     try:
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
             futures = [executor.submit(process_pages, pdf_path, chunk, markup_type,
-                                       queue) for chunk in chunks]
+                                       queue) for chunk in pages_chunks]
             for future in futures:
                 results.extend(future.result())
     finally:
@@ -99,6 +102,19 @@ def main(pdf_path, json_path, markup_type, num_workers=8):
         json.dump(results, f, ensure_ascii=False, indent=4)
 
     return results
+
+def parse_page_ranges(pages_str, max_page):
+    """Преобразует строку диапазонов страниц в список индексов (0-based)."""
+    pages = set()
+    for part in pages_str.split(','):
+        if '-' in part:
+            start, end = map(int, part.split('-'))
+            pages.update(range(start - 1, min(end, max_page)))  # -1 т.к. 0-based
+        else:
+            page = int(part)
+            if 1 <= page <= max_page:
+                pages.add(page - 1)
+    return sorted(pages)
 
 if __name__ == "__main__":
     import argparse
@@ -118,12 +134,29 @@ if __name__ == "__main__":
         default=8,
         help="Number of worker processes (default: 8)"
     )
+    parser.add_argument(
+        "-p", "--pages",
+        type=str,
+        default=None,
+        help="Page ranges to process, e.g., '1-3,5,7-9'"
+    )
 
     args = parser.parse_args()
+
+    # Открываем PDF, чтобы узнать число страниц
+    doc = fitz.open(args.pdf_path)
+    total_pages = doc.page_count
+    doc.close()
+
+    if args.pages:
+        pages_to_process = parse_page_ranges(args.pages, total_pages)
+    else:
+        pages_to_process = list(range(total_pages))
 
     markup = main(
         pdf_path=args.pdf_path,
         json_path=args.json_path,
         markup_type=args.markup_type,
-        num_workers=args.workers
+        num_workers=args.workers,
+        page_indices=pages_to_process
     )
