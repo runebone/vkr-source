@@ -152,120 +152,6 @@ def extract_line_features(
         color_comp_lengths,
         first_nonwhite_index,
     )
-    # """
-    # Извлекает из одномерного сканлайна следующие признаки:
-    #   1) count_white            — число белых пикселей
-    #   2) count_color            — число цветных (несерых) пикселей
-    #   3) count_gray             — число серых пикселей
-    #   4) comp_lengths           — длины связных компонент не белых пикселей
-    #   5) gap_lengths            — длины пробелов (белых) между такими компонентами
-    #   6) color_comp_lengths     — длины компонент цветных (несерых) пикселей
-    #   7) first_nonwhite_index   — индекс первого не белого пикселя в исходном массиве
-    # Параметры
-    # ----------
-    # scanline : np.ndarray
-    #     Массив пикселей формы (W,) или (W, C).
-    # left_margin : int
-    #     Левая граница включительно.
-    # right_margin : Optional[int]
-    #     Правая граница исключая. Если None — до конца.
-    # white_thresh : int
-    #     Порог для «белого» (0–255).
-    # gray_tol : int
-    #     Допуск по каналам для «серого».
-    #
-    # Возвращает
-    # -------
-    # Dict[str, object]
-    #     Словарь с ключами, перечисленными выше.
-    # """
-    # # Выбор сегмента
-    # end = right_margin if right_margin is not None else scanline.shape[0]
-    # segment = scanline[left_margin:end]
-    # if segment.size == 0:
-    #     raise ValueError("Segment length is zero. Проверьте left_margin/right_margin.")
-    #
-    # (mask_white,
-    #  mask_nonwhite,
-    #  mask_color,
-    #  mask_gray) = get_masks(segment, white_thresh, gray_tol)
-    #
-    # # Считаем пиксели
-    # count_white = int(mask_white.sum())
-    # count_color = int(mask_color.sum())
-    # count_gray = int(mask_gray.sum())
-    #
-    # # Функция для подсчёта run-length encoding
-    # def _rle_lengths(mask: np.ndarray) -> List[int]:
-    #     if mask.ndim != 1:
-    #         mask = mask.ravel()
-    #     padded = np.pad(mask.astype(np.int8), (1, 1), mode='constant')
-    #     diffs = np.diff(padded)
-    #     run_starts = np.where(diffs == 1)[0]
-    #     run_ends = np.where(diffs == -1)[0]
-    #     return (run_ends - run_starts).tolist()
-    #     # lengths: List[int] = []
-    #     # in_run = False
-    #     # run_len = 0
-    #     # for flag in mask:
-    #     #     if flag:
-    #     #         if not in_run:
-    #     #             in_run = True
-    #     #             run_len = 1
-    #     #         else:
-    #     #             run_len += 1
-    #     #     else:
-    #     #         if in_run:
-    #     #             lengths.append(run_len)
-    #     #             in_run = False
-    #     # if in_run:
-    #     #     lengths.append(run_len)
-    #     # return lengths
-    #
-    # comp_lengths = _rle_lengths(mask_nonwhite)
-    # gray_comp_lengths = _rle_lengths(mask_gray)
-    # color_comp_lengths = _rle_lengths(mask_color)
-    #
-    # # Вычисляем длины пробелов между компонентами
-    # gap_lengths: List[int] = []
-    # # находим старты и длины nonwhite-компонент
-    # starts: List[int] = []
-    # in_comp = False
-    # curr_len = 0
-    # for idx, flag in enumerate(mask_nonwhite):
-    #     if flag:
-    #         if not in_comp:
-    #             in_comp = True
-    #             curr_len = 1
-    #             starts.append(idx)
-    #         else:
-    #             curr_len += 1
-    #     else:
-    #         if in_comp:
-    #             in_comp = False
-    # # если компонент последний не закрыт — закрываем
-    # # (но для gap_lengths достаточно стартов и comp_lengths)
-    # for (s, l), (next_s, _) in zip(zip(starts, comp_lengths), zip(starts[1:], comp_lengths[1:])):
-    #     gap = next_s - (s + l)
-    #     if gap > 0:
-    #         gap_lengths.append(gap)
-    #
-    # # Индекс первого не белого пикселя в исходном scanline
-    # nonwhite_idxs = np.nonzero(mask_nonwhite)[0]
-    # first_nonwhite_index = (
-    #     int(nonwhite_idxs[0] + left_margin) if nonwhite_idxs.size > 0 else None
-    # )
-    #
-    # return LineFeatures(
-    #     count_white,
-    #     count_color,
-    #     count_gray,
-    #     comp_lengths,
-    #     gap_lengths,
-    #     gray_comp_lengths,
-    #     color_comp_lengths,
-    #     first_nonwhite_index,
-    # )
 
 
 def get_min_long_black_line_length(features):
@@ -426,10 +312,10 @@ def handle_undefined(sd: SegmentData):
 
     return ClassNames[Class.UNDEFINED]
 
-def handle_background(sd: SegmentData):
+def handle_background(_: SegmentData):
     return ClassNames[Class.BACKGROUND]
 
-def handle_few_text(sd: SegmentData):
+def handle_few_text(_: SegmentData):
     return ClassNames[Class.TEXT]
 
 def handle_many_text(sd: SegmentData):
@@ -552,7 +438,6 @@ def handle_medium_black_line(sd: SegmentData):
 
     def plot(sd: SegmentData):
         height = sd.end - sd.start
-        # has_a_lot_of_color = (sd.count_color / height) > 0.7
         has_color = sd.count_color > 0
         has_a_few_mbls = (sd.count_medium_black_line / height) < MAX_MBLS_RATIO_TO_BE_CONSIDERED_FEW
 
@@ -565,7 +450,6 @@ def handle_medium_black_line(sd: SegmentData):
         has_many_white_pixels = sd.count_white_px / all_px > MIN_WHITE_PIXELS_RATIO_TO_BE_CONSIDERED_MANY
 
         return (
-            # has_a_lot_of_color and
             has_color and
             has_a_few_mbls and
             n_vertical_black_lines >= 2 and
@@ -606,7 +490,6 @@ def handle_medium_black_line(sd: SegmentData):
         return ClassNames[Class.TEXT]
 
     if equation(sd):
-        # return ClassNames[Class.EQUATION]
         return ClassNames[Class.UNDEFINED]
 
     if undefined(sd):
@@ -666,7 +549,6 @@ def handle_long_black_line(sd: SegmentData):
 
     def plot(sd: SegmentData):
         height = sd.end - sd.start
-        # has_a_lot_of_color = (sd.count_color / height) > 0.7
         has_color = sd.count_color > 0
         has_a_few_lbls = (sd.count_long_black_line / height) < 0.1
 
@@ -676,7 +558,6 @@ def handle_long_black_line(sd: SegmentData):
         n_vertical_black_lines = len(np.where(diff == 1)[0])
 
         return (
-            # has_a_lot_of_color and
             has_color and
             has_a_few_lbls and
             n_vertical_black_lines >= 2
@@ -782,7 +663,7 @@ def segment_document_raw(
 
     return results
 
-def segment_document(
+def unused_segment_document(
     image: np.ndarray,
     line_feature_func: Callable[[np.ndarray], LineFeatures],
     raw: bool = False,
@@ -839,20 +720,20 @@ def segment_document(
 
     return results
 
-def merge(markup: List[Tuple[int, int, str]]):
-    def merge_segments(arr):
-        merged = []
-        (current_start, current_end, current_class) = arr[0]
-        for i in range(1, len(arr)):
-            start, end, cls = arr[i]
-            if current_class == cls and current_end == start:
-                current_end = end
-            else:
-                merged.append([current_start, current_end, current_class])
-                current_start, current_end, current_class = start, end, cls
-        merged.append([current_start, current_end, current_class])
-        return merged
+def merge_segments(arr):
+    merged = []
+    (current_start, current_end, current_class) = arr[0]
+    for i in range(1, len(arr)):
+        start, end, cls = arr[i]
+        if current_class == cls and current_end == start:
+            current_end = end
+        else:
+            merged.append([current_start, current_end, current_class])
+            current_start, current_end, current_class = start, end, cls
+    merged.append([current_start, current_end, current_class])
+    return merged
 
+def merge(markup: List[Tuple[int, int, str]]):
     tmp_markup = [markup[0]]
     new_markup = [markup[0]]
     prev_start = curr_start = next_start = prev_end = curr_end = next_end = 0
@@ -961,39 +842,4 @@ def merge(markup: List[Tuple[int, int, str]]):
 
     new_markup = merge_segments(tmp_markup)
 
-    # print(new_markup)
-
     return new_markup
-
-def segdoc(image, v):
-    if v == 0:
-        markup = segment_document_raw(image, lambda sl:
-                                extract_line_features(
-                                    sl, 0, None, WHITE_THRESH, GRAY_TOL
-                                ))
-        return markup
-        # return np.array(markup).reshape(-1, 3)
-
-    if v == 1:
-        markup = segment_document(image, lambda sl:
-                                extract_line_features(
-                                    sl, 0, None, WHITE_THRESH, GRAY_TOL
-                                ), True)
-        return markup
-        # return np.array(markup).reshape(-1, 3)
-
-    if v == 2:
-        markup =  segment_document(image, lambda sl:
-                                extract_line_features(
-                                    sl, 0, None, WHITE_THRESH, GRAY_TOL
-                                ), False)
-        return markup
-        # return np.array(markup).reshape(-1, 3)
-
-    if v == 3:
-        markup =  segment_document(image, lambda sl:
-                                extract_line_features(
-                                    sl, 0, None, WHITE_THRESH, GRAY_TOL
-                                ), False)
-        return merge(markup)
-        # return np.array(merge(markup).reshape(-1, 3)

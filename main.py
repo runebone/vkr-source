@@ -4,8 +4,7 @@ import numpy as np
 import fitz
 from concurrent.futures import ProcessPoolExecutor
 
-from logic import extract_line_features, merge, segment_document_raw
-from fast import segment_document
+from fast import segdoc as sd
 
 def page_to_image(pdf_path: str, page_index: int, scale_factor: float = 3) -> Image.Image:
     doc = fitz.open(pdf_path)
@@ -15,23 +14,14 @@ def page_to_image(pdf_path: str, page_index: int, scale_factor: float = 3) -> Im
     doc.close()
     return img
 
-def x(sl):
-    return extract_line_features(sl, 0, None)
-
-def sd(image):
-    # markup = segment_document(image, x, True, 2)
-    markup = segment_document(image, x, False, 4)
-    # markup = segment_document_raw(image, x)
-    return markup
-
-def process_pages(pdf_path, page_range):
+def process_pages(pdf_path, page_range, markup_type):
     """Функция для обработки поддиапазона страниц."""
     partial_results = []
     for i in page_range:
         image = page_to_image(pdf_path, i)
         image_np = np.array(image)
-        markup = sd(image_np)
-        markup = merge(markup)
+        markup = sd(image_np, markup_type)
+        assert markup is not None
         del image, image_np
         partial_results.append({
             "page": i + 1,
@@ -54,7 +44,12 @@ def chunk_indices(total, chunks):
         start = end
     return indices
 
-def main(pdf_path, num_workers=8):
+def main(pdf_path, json_path, markup_type, num_workers=8):
+    # markup_type = 0 -> raw
+    # markup_type = 1 -> primary
+    # markup_type = 2 -> specified
+    # markup_type = 3 -> merged
+
     doc = fitz.open(pdf_path)
     total_pages = doc.page_count
     doc.close()
@@ -64,17 +59,16 @@ def main(pdf_path, num_workers=8):
     results = []
 
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        futures = [executor.submit(process_pages, pdf_path, chunk) for chunk in chunks]
+        futures = [executor.submit(process_pages, pdf_path, chunk, markup_type) for chunk in chunks]
         for future in futures:
             results.extend(future.result())
 
     results.sort(key=lambda x: x["page"])
 
-    with open("sex.json", "w", encoding="utf-8") as f:
+    with open(json_path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=4)
 
     return results
 
 if __name__ == "__main__":
-    # markup = main("/home/rukost/index.pdf")
-    markup = main("/home/rukost/University/vkr/index.pdf")
+    markup = main("/home/rukost/index.pdf", "markup.json", 0)

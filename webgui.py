@@ -7,10 +7,8 @@ import fitz  # PyMuPDF
 import numpy as np
 from PIL import Image
 
-from logic import extract_line_features, classify_line_str, segdoc
+from fast import segdoc
 from states import State, StateNames, Class, ClassNames
-
-import time
 
 # Настройки приложения
 autolog = logging.getLogger(__name__)

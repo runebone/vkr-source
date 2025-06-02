@@ -4,26 +4,6 @@ import sys
 
 from states import Class, ClassNames, State, StateNames
 
-# black   : (0.1098, 0.1059, 0.0980)
-# blue    : (0.1725, 0.4706, 0.7490)
-# cyan    : (0.0392, 0.6824, 0.7020)
-# green   : (0.3176, 0.6235, 0.3137)
-# magenta : (0.8784, 0.1725, 0.4275)
-# red     : (0.9373, 0.1843, 0.1529)
-# white   : (0.7294, 0.6509, 0.4980)
-# yellow  : (0.9843, 0.7216, 0.1608)
-
-    # WHITE = (255, 255, 255)
-    # YELLOW = (255, 255, 0)
-    # GREEN = (0, 255, 0)
-    # MAGENTA = (255, 0, 255)
-    # CYAN = (0, 255, 255)
-    # RED = (255, 0, 0)
-    # BLUE = (0, 0, 255)
-    # PURPLE = (128, 0, 255)
-    # GREENISHCYAN = (0, 255, 128)
-
-
 LABEL_COLORS = {
     StateNames[State.BACKGROUND]:        (  1,   1,   1),
     StateNames[State.UNDEFINED]:         (  1,   1,   0),
