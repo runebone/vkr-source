@@ -1,0 +1,105 @@
+import json
+import fitz  # PyMuPDF
+import sys
+
+from states import Class, ClassNames, State, StateNames
+
+# black   : (0.1098, 0.1059, 0.0980)
+# blue    : (0.1725, 0.4706, 0.7490)
+# cyan    : (0.0392, 0.6824, 0.7020)
+# green   : (0.3176, 0.6235, 0.3137)
+# magenta : (0.8784, 0.1725, 0.4275)
+# red     : (0.9373, 0.1843, 0.1529)
+# white   : (0.7294, 0.6509, 0.4980)
+# yellow  : (0.9843, 0.7216, 0.1608)
+
+    # WHITE = (255, 255, 255)
+    # YELLOW = (255, 255, 0)
+    # GREEN = (0, 255, 0)
+    # MAGENTA = (255, 0, 255)
+    # CYAN = (0, 255, 255)
+    # RED = (255, 0, 0)
+    # BLUE = (0, 0, 255)
+    # PURPLE = (128, 0, 255)
+    # GREENISHCYAN = (0, 255, 128)
+
+
+LABEL_COLORS = {
+    StateNames[State.BACKGROUND]:        (  1,   1,   1),
+    StateNames[State.UNDEFINED]:         (  1,   1,   0),
+    StateNames[State.FEW_TEXT]:          (  0,   1,   0),
+    StateNames[State.MANY_TEXT]:         (  1,   0,   1),
+    StateNames[State.COLOR]:             (  0,   1,   1),
+    StateNames[State.MEDIUM_BLACK_LINE]: (  1,   0,   0),
+    StateNames[State.LONG_BLACK_LINE]:   (  0,   0,   1),
+    ClassNames[Class.UNDEFINED]:         (  1,   1,   0),
+    ClassNames[Class.BACKGROUND]:        (  1,   1,   1),
+    ClassNames[Class.TEXT]:              (  1,   0,   1),
+    ClassNames[Class.TABLE]:             (  0,   0,   1),
+    ClassNames[Class.CODE]:              (0.5,   0,   1),
+    ClassNames[Class.DIAGRAM]:           (  1,   0,   0),
+    ClassNames[Class.FIGURE]:            (  0,   1,   1),
+    ClassNames[Class.PLOT]:              (  0,   1, 0.5),
+}
+
+DEFAULT_COLOR = (0.2, 0.2, 0.2)
+ALPHA = 0.4
+FONT_SIZE = 12
+TEXT_PADDING_X = 5
+TEXT_PADDING_Y = 4
+SCALE_FACTOR = 3
+
+def annotate_pdf(pdf_path, json_path, output_path):
+    doc = fitz.open(pdf_path)
+
+    with open(json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    for page_entry in data:
+        page_num = page_entry['page'] - 1
+        if page_num < 0 or page_num >= len(doc):
+            print(f"Warning: page {page_num + 1} out of bounds")
+            continue
+
+        page = doc[page_num]
+        width = page.rect.width
+
+        for segment in page_entry['segments']:
+            y_start = segment['y_start'] / SCALE_FACTOR
+            y_end = segment['y_end'] / SCALE_FACTOR
+            label = segment['label']
+            rgb = LABEL_COLORS.get(label, DEFAULT_COLOR)
+
+            rect = fitz.Rect(0, y_start, width, y_end)
+
+            shape = page.new_shape()
+            shape.draw_rect(rect)
+            # shape.finish(fill=rgb, color=rgb, fill_opacity=ALPHA)
+            shape.finish(fill=rgb, color=None, fill_opacity=ALPHA)
+            shape.commit()
+
+            segment_height = y_end - y_start
+            if segment_height >= FONT_SIZE + 2 * TEXT_PADDING_Y:
+                text_rect = fitz.Rect(
+                    rect.x0 + TEXT_PADDING_X,
+                    rect.y0 + TEXT_PADDING_Y,
+                    rect.x1 - TEXT_PADDING_X,
+                    rect.y1 - TEXT_PADDING_Y
+                )
+                page.insert_textbox(
+                    text_rect,
+                    label,
+                    fontsize=FONT_SIZE,
+                    color=rgb,
+                    align=0  # 0 = left, 1 = center, 2 = right, 3 = justify
+                )
+
+    doc.save(output_path)
+    print(f"Сохранено в: {output_path}")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 4:
+        print("Usage: python annotate_pdf.py input.pdf input.json output.pdf")
+    else:
+        annotate_pdf(sys.argv[1], sys.argv[2], sys.argv[3])
