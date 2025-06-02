@@ -79,7 +79,15 @@ def annotate_pdf(pdf_path, json_path, output_path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print("Usage: python annotate_pdf.py input.pdf input.json output.pdf")
-    else:
-        annotate_pdf(sys.argv[1], sys.argv[2], sys.argv[3])
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Annotate a PDF with colored segments from a JSON markup file."
+    )
+    parser.add_argument("pdf_path", type=str, help="Path to the input PDF file")
+    parser.add_argument("json_path", type=str, help="Path to the JSON file with markup")
+    parser.add_argument("output_path", type=str, help="Path to save the annotated PDF")
+
+    args = parser.parse_args()
+
+    annotate_pdf(args.pdf_path, args.json_path, args.output_path)

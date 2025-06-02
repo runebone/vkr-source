@@ -71,4 +71,29 @@ def main(pdf_path, json_path, markup_type, num_workers=8):
     return results
 
 if __name__ == "__main__":
-    markup = main("/home/rukost/index.pdf", "markup.json", 0)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Segment PDF pages and export markup to JSON.")
+    parser.add_argument("pdf_path", type=str, help="Path to the input PDF file")
+    parser.add_argument("json_path", type=str, help="Path to the output JSON file")
+    parser.add_argument(
+        "markup_type",
+        type=int,
+        choices=[0, 1, 2, 3],
+        help="Markup type: 0 - raw, 1 - primary, 2 - specified, 3 - merged"
+    )
+    parser.add_argument(
+        "-w", "--workers",
+        type=int,
+        default=8,
+        help="Number of worker processes (default: 8)"
+    )
+
+    args = parser.parse_args()
+
+    markup = main(
+        pdf_path=args.pdf_path,
+        json_path=args.json_path,
+        markup_type=args.markup_type,
+        num_workers=args.workers
+    )
