@@ -64,25 +64,34 @@ def main(pdf_path, json_path, markup_type, num_workers=8):
 
     manager = Manager()
     queue = manager.Queue()
+    stop_signal = manager.Event()
 
-    def tqdm_updater():
-        pbar = tqdm(total=total_pages, desc="Pages processed")
-        for _ in range(total_pages):
-            queue.get()
-            pbar.update(1)
+    def tqdm_updater(pbar, queue, total_pages, stop_signal):
+        processed = 0
+        while processed < total_pages:
+            try:
+                queue.get(timeout=0.1)
+                pbar.update(1)
+                processed += 1
+            except Exception:
+                if stop_signal.is_set():
+                    break
         pbar.close()
 
     # Запускаем tqdm в отдельном потоке
-    thread = threading.Thread(target=tqdm_updater)
+    pbar = tqdm(total=total_pages, desc="Pages processed")
+    thread = threading.Thread(target=tqdm_updater, args=(pbar, queue, total_pages, stop_signal))
     thread.start()
 
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        futures = [executor.submit(process_pages, pdf_path, chunk, markup_type,
-                                   queue) for chunk in chunks]
-        for future in futures:
-            results.extend(future.result())
-
-    thread.join()  # Дождаться завершения прогресс-бара
+    try:
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            futures = [executor.submit(process_pages, pdf_path, chunk, markup_type,
+                                       queue) for chunk in chunks]
+            for future in futures:
+                results.extend(future.result())
+    finally:
+        stop_signal.set()
+        thread.join()
 
     results.sort(key=lambda x: x["page"])
 
