@@ -7,7 +7,7 @@ from main import main as generate_markup
 from apply import annotate_pdf
 
 MARKUP_TYPE_MAP = {
-    "Сырая": 0,
+    "Построчная": 0,
     "Первичная": 1,
     "Уточненная": 2,
     "Объединенная": 3,
@@ -36,7 +36,7 @@ with gr.Blocks() as demo:
         pdf_input = gr.File(label="Загрузите PDF-документ", file_types=[".pdf"])
         markup_type_input = gr.Dropdown(
             choices=list(MARKUP_TYPE_MAP.keys()),
-            value="Сырая",
+            value="Построчная",
             label="Тип разметки"
         )
 

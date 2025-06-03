@@ -663,7 +663,7 @@ def segment_document_raw(
 
     return results
 
-def unused_segment_document(
+def segment_document(
     image: np.ndarray,
     line_feature_func: Callable[[np.ndarray], LineFeatures],
     raw: bool = False,
@@ -672,7 +672,7 @@ def unused_segment_document(
     def empty_segment_data():
         return SegmentData(
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            empty_line, empty_line
+            empty_line.copy(), empty_line.copy()
         )
 
     def reset_segment_data(sd: SegmentData):

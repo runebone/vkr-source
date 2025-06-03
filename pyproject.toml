@@ -7,6 +7,10 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115.12",
     "gradio>=5.31.0",
+    "matplotlib>=3.10.3",
+    "memory-profiler>=0.61.0",
     "opencv-python>=4.11.0.86",
+    "pandas>=2.2.3",
+    "psutil>=7.0.0",
     "pymupdf>=1.26.0",
 ]

@@ -14,7 +14,8 @@ from logic import (
     update_state,
     classify_segment,
     merge,
-    merge_segments
+    merge_segments,
+    segment_document
 )
 
 
@@ -68,11 +69,11 @@ def classify_segment_range(
     return (sd.start, sd.end, class_name)
 
 
-def segment_document(
+def threaded_segment_document(
     image: np.ndarray,
     line_feature_func: Callable[[np.ndarray], LineFeatures],
     raw: bool = False,
-    max_workers: int = 8,
+    max_workers: int = 4,
 ) -> List[Tuple[int, int, str]]:
     """Сегментирует изображение документа и классифицирует каждый сегмент в пуле потоков."""
     segments = find_segments_all(image)
