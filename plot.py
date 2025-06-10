@@ -1,5 +1,14 @@
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
+
+plt.rcParams.update({
+    'axes.titlesize': 16,
+    'axes.labelsize': 14,
+    'xtick.labelsize': 12,
+    'ytick.labelsize': 12,
+    'legend.fontsize': 12
+})
 
 # Данные по количеству процессов
 x = [1, 2, 4, 8, 16, 32, 64]
@@ -73,3 +82,26 @@ plt.grid(True, which='both', linestyle='--', linewidth=0.5)
 plt.legend()
 plt.savefig("pama.pdf")
 plt.show()
+
+# y = 1462.376 * x^-2.198
+# y = 2025.172 * x^-2.128
+# y = 2064.166 * x^-2.131
+# y = 2369.716 * x^-2.172
+# y = 0.001 * x^1.246
+# y = 0.001 * x^1.245
+# y = 0.001 * x^1.245
+# y = 0.001 * x^1.244
+
+# plt.figure(figsize=(10, 6))
+# plt.plot(df_timing.index, df_timing["m0"], label=renamed_columns["m0"], linestyle=line_styles[0], marker=markers[0])
+# y = 1462.376 * np.pow(x, -2.198)
+# plt.plot(x, y, linestyle=line_styles[0], marker=markers[0])
+# plt.xscale("log")
+# plt.xticks(df_timing.index, labels=[str(i) for i in df_timing.index])
+# plt.title("Зависимость времени разметки от количества процессов")
+# plt.xlabel("Количество процессов")
+# plt.ylabel("Время разметки, с")
+# plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+# plt.legend()
+# plt.savefig("kaka.pdf")
+# plt.show()

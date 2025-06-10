@@ -77,7 +77,7 @@ def annotate_pdf(pdf_path, json_path, output_path):
                 )
 
     doc.save(output_path)
-    print(f"Сохранено в: {output_path}")
+    print(f"Saved: {output_path}")
 
 
 if __name__ == "__main__":
